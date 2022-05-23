@@ -33,20 +33,24 @@ public class VertexFlowBaker : MonoBehaviour
     NativeArray<Vector3> m_Normals;
     NativeArray<Vector3> m_AveragedFlowDirections;
     NativeArray<FlowBakerVertex> m_FlowBakerVertices;
-    NativeQueue<int> m_VertQueue;
+    NativeQueue<int> m_ReadVertQueue;
+    NativeQueue<int> m_WriteVertQueue;
     NativeArray<Color> m_FlowColors;
-    NativeArray<UnsafeHashSet<int>> m_VertTriangles;
     NativeArray<SubMesh> m_SubMeshes;
     NativeHashSet<int> m_WalkedVertices;
+    UnsafeList<int> m_FoundTriIndices;
+    UnsafeHashSet<int> m_HashIntersection;
     CalculateOverlappingVertsJob m_CalculateOverlappingVertsJob;
+    MeshWalkJob m_MeshWalkJob;
     JobHandle m_CalculateOverlappingVertsJobHandle;
+    JobHandle m_MeshWalkJobHandle;
     Mesh.MeshDataArray m_DataArray;
     
     [Serializable]
     public struct SubMesh
     {
-        public SubMeshDescriptor Descriptor;
-        public UnsafeList<int> Triangles;
+        public readonly SubMeshDescriptor Descriptor;
+        public readonly UnsafeList<int> Triangles;
 
         public SubMesh(SubMeshDescriptor descriptor, UnsafeList<int> triangles)
         {
@@ -65,7 +69,7 @@ public class VertexFlowBaker : MonoBehaviour
     {
         public readonly bool IsCreated;
         public readonly int SubMeshIndex;
-        public readonly UnsafeList<Vector3> FlowDirections;
+        public readonly UnsafeHashSet<Vector3> FlowDirections;
         public readonly UnsafeHashSet<int> OverlappingVertIndices;
         public readonly UnsafeHashSet<int> FlowedFromVertIndices;
         public readonly UnsafeHashSet<int> Triangles;
@@ -74,7 +78,7 @@ public class VertexFlowBaker : MonoBehaviour
         {
             IsCreated = true;
             SubMeshIndex = subMeshIndex;
-            FlowDirections = new UnsafeList<Vector3>(initialCapacity, Allocator.Persistent);
+            FlowDirections = new UnsafeHashSet<Vector3>(initialCapacity, Allocator.Persistent);
             OverlappingVertIndices = new UnsafeHashSet<int>(initialCapacity, Allocator.Persistent);
             FlowedFromVertIndices = new UnsafeHashSet<int>(initialCapacity, Allocator.Persistent);
             Triangles = new UnsafeHashSet<int>(initialCapacity, Allocator.Persistent);
@@ -132,7 +136,6 @@ public class VertexFlowBaker : MonoBehaviour
         m_AveragedFlowDirections = new NativeArray<Vector3>(data.vertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         m_FlowBakerVertices = new NativeArray<FlowBakerVertex>(data.vertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         m_WalkedVertices = new NativeHashSet<int>(data.vertexCount, Allocator.Persistent);
-        m_VertTriangles = new NativeArray<UnsafeHashSet<int>>(data.vertexCount, Allocator.Persistent);
         m_SubMeshes = new NativeArray<SubMesh>(data.subMeshCount, Allocator.Persistent);
         for (int submeshIndex = 0; submeshIndex < data.subMeshCount; ++submeshIndex)
         {
@@ -144,7 +147,11 @@ public class VertexFlowBaker : MonoBehaviour
             {
                 int vertIndex = triangles[triIndex];
                 if (!m_FlowBakerVertices[vertIndex].IsCreated)
+                {
                     m_FlowBakerVertices[vertIndex] = new FlowBakerVertex(submeshIndex, 4);
+                    m_FlowColors[vertIndex] = Color.yellow;
+                }
+
                 m_FlowBakerVertices[vertIndex].Triangles.Add(triIndex);
                 unsafeTriangles.Add(vertIndex);
             }
@@ -153,7 +160,10 @@ public class VertexFlowBaker : MonoBehaviour
             Debug.Log($"{descriptor.topology} {descriptor.indexCount} {descriptor.vertexCount}");
         }
         
-        m_VertQueue = new NativeQueue<int>(Allocator.Persistent);
+        m_ReadVertQueue = new NativeQueue<int>(Allocator.Persistent);
+        m_WriteVertQueue = new NativeQueue<int>(Allocator.Persistent);
+        m_FoundTriIndices = new UnsafeList<int>( 4, Allocator.TempJob);
+        m_HashIntersection = new UnsafeHashSet<int>(16, Allocator.TempJob);
         
         StartCoroutine(WalkVertices());
     }
@@ -173,8 +183,10 @@ public class VertexFlowBaker : MonoBehaviour
             m_SubMeshes[i].Dispose();
 
         m_DataArray.Dispose();
-
-        m_VertQueue.Dispose();
+        m_ReadVertQueue.Dispose();
+        m_WriteVertQueue.Dispose();
+        m_FoundTriIndices.Dispose();
+        m_HashIntersection.Dispose();
     }
 
     int GetNearestVertex(Vector3 fromPoint)
@@ -198,47 +210,40 @@ public class VertexFlowBaker : MonoBehaviour
     [BurstCompile]
     struct MeshWalkJob : IJob
     {
+        public NativeQueue<int> ReadQueue;
+
+        public UnsafeList<int> FoundTriIndices;
+        
+        public UnsafeHashSet<int> HashIntersection;
+
+        public NativeArray<FlowBakerVertex> FlowBakerVertices;
+        
         [ReadOnly]
         public NativeArray<Vector3> Vertices;
-        
-        [ReadOnly]
-        public NativeArray<int> Indices;
-        
+
         [ReadOnly]
         public NativeArray<SubMesh> SubMeshes;
-        
-        [ReadOnly]
-        public NativeArray<Vector3> FlowedFrom;
-        
-        [ReadOnly]
-        public NativeArray<FlowBakerVertex> FlowBakerVertices;
-    
-        [ReadOnly] 
-        public NativeQueue<int> ReadQueue;
         
         [WriteOnly] 
         public NativeQueue<int> WriteQueue;
         
         [WriteOnly] 
         public NativeHashSet<int> WalkedVertices;
-    
+        
         public void Execute()
         {
-            UnsafeList<int> foundTriIndices = new UnsafeList<int>( 4, Allocator.Persistent);
-            UnsafeHashSet<int> hashIntersection = new UnsafeHashSet<int>(16, Allocator.Persistent);
-
             while (ReadQueue.Count  > 0)
             {
                 int vertIndex = ReadQueue.Dequeue();
                 
-                foundTriIndices.Clear();
-                int subMeshIndex = SearchSubMeshForVert(vertIndex, foundTriIndices);
+                FoundTriIndices.Clear();
+                int subMeshIndex = SearchSubMeshForVert(vertIndex);
                 
                 Vector3 vertPosition = Vertices[vertIndex];
                 
-                for (int foundTriIndex = 0; foundTriIndex < foundTriIndices.Length; ++foundTriIndex)
+                for (int foundTriIndex = 0; foundTriIndex < FoundTriIndices.Length; ++foundTriIndex)
                 {
-                    int triIndex = foundTriIndices[foundTriIndex];
+                    int triIndex = FoundTriIndices[foundTriIndex];
                     int triIndexStartOffset = triIndex % 3;
                     int triIndexStart = triIndex - triIndexStartOffset;
     
@@ -253,7 +258,7 @@ public class VertexFlowBaker : MonoBehaviour
                                 WriteQueue.Enqueue(neighborVertIndex);
                             }
                             
-                            if (!FlowFromAndOverlapsContain(vertIndex, neighborVertIndex, hashIntersection) && 
+                            if (!FlowFromAndOverlapsContain(vertIndex, neighborVertIndex) && 
                                 FlowBakerVertices[neighborVertIndex].FlowedFromVertIndices.Add(vertIndex))
                             {
                                 Vector3 neighborVertPosition = Vertices[neighborVertIndex];
@@ -267,7 +272,7 @@ public class VertexFlowBaker : MonoBehaviour
             }
         }
         
-        bool FlowFromAndOverlapsContain(int vertIndex, int neighborIndex, UnsafeHashSet<int> hashIntersection)
+        bool FlowFromAndOverlapsContain(int vertIndex, int neighborIndex)
         {
             var flowedFrom = FlowBakerVertices[vertIndex].FlowedFromVertIndices;
             if (flowedFrom.Contains(neighborIndex))
@@ -276,10 +281,10 @@ public class VertexFlowBaker : MonoBehaviour
             }
             
             var neighborFlowedFrom = FlowBakerVertices[neighborIndex].FlowedFromVertIndices;
-            hashIntersection.Clear();
-            hashIntersection.UnionWith(neighborFlowedFrom);
-            hashIntersection.IntersectWith(flowedFrom);
-            if (!hashIntersection.IsEmpty)
+            HashIntersection.Clear();
+            HashIntersection.UnionWith(neighborFlowedFrom);
+            HashIntersection.IntersectWith(flowedFrom);
+            if (!HashIntersection.IsEmpty)
             {
                 return true;
             }
@@ -292,10 +297,10 @@ public class VertexFlowBaker : MonoBehaviour
                 }
                 
                 var neighborOverlappingFlowedFrom = FlowBakerVertices[neighborOverlappingIndex].OverlappingVertIndices;
-                hashIntersection.Clear();
-                hashIntersection.UnionWith(neighborOverlappingFlowedFrom);
-                hashIntersection.IntersectWith(flowedFrom);
-                if (!hashIntersection.IsEmpty)
+                HashIntersection.Clear();
+                HashIntersection.UnionWith(neighborOverlappingFlowedFrom);
+                HashIntersection.IntersectWith(flowedFrom);
+                if (!HashIntersection.IsEmpty)
                 {
                     return true;
                 }
@@ -316,12 +321,12 @@ public class VertexFlowBaker : MonoBehaviour
             return false;
         }
         
-        int SearchSubMeshForVert(int vertIndex, UnsafeList<int> triIndices)
+        int SearchSubMeshForVert(int vertIndex)
         {
             int subMeshIndex = -1;
             foreach (var triIndex in FlowBakerVertices[vertIndex].Triangles)
             {
-                triIndices.Add(triIndex);
+                FoundTriIndices.Add(triIndex);
                 subMeshIndex = FlowBakerVertices[vertIndex].SubMeshIndex;
             }
     
@@ -329,7 +334,7 @@ public class VertexFlowBaker : MonoBehaviour
             {
                 foreach (var triIndex in FlowBakerVertices[overlapVertIndex].Triangles)
                 {
-                    triIndices.Add(triIndex);
+                    FoundTriIndices.Add(triIndex);
                     if (subMeshIndex != FlowBakerVertices[vertIndex].SubMeshIndex)
                         Debug.LogError("Different submeshes on tri vert search? Should never happen.");
                 }
@@ -339,6 +344,23 @@ public class VertexFlowBaker : MonoBehaviour
         }
     }
 
+    void DrawDebugFlowRays()
+    {
+        foreach (int walkedVertex in m_WalkedVertices)
+        {
+            var vertPos = m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]);
+            foreach (var fromIndex in m_FlowBakerVertices[walkedVertex].FlowedFromVertIndices)
+            {
+                var fromPos = m_TransformMatrix.MultiplyPoint(m_Vertices[fromIndex]);
+                Vector3 ray = (fromPos - vertPos).normalized; 
+                // Color color = new Color(ray.x, ray.y, ray.z, 1);
+                Debug.DrawRay(vertPos, ray * .003f, m_FlowColors[walkedVertex]);
+                Debug.DrawRay(vertPos,  m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex]) * .006f, m_FlowColors[walkedVertex]);
+                
+            }
+        }
+    }
+    
     IEnumerator WalkVertices()
     {
         m_CalculateOverlappingVertsJob = new CalculateOverlappingVertsJob
@@ -349,111 +371,136 @@ public class VertexFlowBaker : MonoBehaviour
         };
         m_CalculateOverlappingVertsJobHandle = m_CalculateOverlappingVertsJob.Schedule(m_Vertices.Length, 4);
         yield return new WaitUntil(() => m_CalculateOverlappingVertsJobHandle.IsCompleted);
+        m_CalculateOverlappingVertsJobHandle.Complete();
         
         Debug.Log("Calculate Overlap Complete");
         
         for (int i = 0; i < m_StartPoints.Length; ++i)
         {
+            if (!m_StartPoints[i].gameObject.activeSelf)
+                continue;
+                
             int nearestIndex = GetNearestVertex(m_StartPoints[i].transform.position);
-            m_VertQueue.Enqueue(nearestIndex);
+            m_ReadVertQueue.Enqueue(nearestIndex);
             AddWalkedVerticesWithOverlaps(nearestIndex);
         }
-        
-        List<int> foundTriIndices = new();
-        NativeList<Vector3> flowDirections = new NativeList<Vector3>(Allocator.Persistent);
-        m_RecyclableHashIntersection = new UnsafeHashSet<int>(16, Allocator.Persistent);
-        // NativeHashSet<int> overlappingVerts = new NativeHashSet<int>(10, Allocator.Persistent);
-        int stepCount = 0;
-        int subMeshIndex = -1;
-        
-        while (m_VertQueue.Count  > 0)
-        {
-            // while (!Input.GetKeyDown(KeyCode.A))
-            // {
-            //     Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[m_VertQueue.Peek()]) , m_TransformMatrix.MultiplyVector(m_Normals[m_VertQueue.Peek()]) * .0002f, Color.magenta);
-            //     yield return null;
-            // }
-            
-            int vertIndex = m_VertQueue.Dequeue();
-            
-            foundTriIndices.Clear();
-            int submeshIndex = SearchAllSubMeshesForVert(vertIndex, foundTriIndices);
-            
-            Vector3 vertPosition = m_Vertices[vertIndex];
-            
-            for (int foundTriIndex = 0; foundTriIndex < foundTriIndices.Count; ++foundTriIndex)
-            {
-                int triIndex = foundTriIndices[foundTriIndex];
-                int triIndexStartOffset = triIndex % 3;
-                int triIndexStart = triIndex - triIndexStartOffset;
 
-                for (int nextTriIndex = 0; nextTriIndex < 3; ++nextTriIndex)
-                {
-                    int neighborTriIndex = triIndexStart + nextTriIndex;
-                    int neighborVertIndex = m_SubMeshes[submeshIndex].Triangles[neighborTriIndex];
-                    if (vertIndex != neighborVertIndex && !m_FlowBakerVertices[vertIndex].OverlappingVertIndices.Contains(neighborVertIndex))
-                    {
-                        if (AddWalkedVerticesWithOverlaps(neighborVertIndex))
-                        {
-                            m_VertQueue.Enqueue(neighborVertIndex);
-                        }
-                        
-                        if (!FlowFromAndOverlapsContain(vertIndex, neighborVertIndex) && m_FlowBakerVertices[neighborVertIndex].FlowedFromVertIndices.Add(vertIndex))
-                        {
-                            Vector3 neighborVertPosition = m_Vertices[neighborVertIndex];
-                            Vector3 flowDirection = neighborVertPosition - vertPosition;
-                            Vector3 normalizedFlowDirection = flowDirection.normalized;
-                            m_FlowBakerVertices[neighborVertIndex].FlowDirections.Add(normalizedFlowDirection);
-                        }
-                    }
-                }
-            }
-            
-            stepCount++;
-            if (stepCount == 5)
+        Debug.Log($"Added {m_StartPoints.Length}. Starting Mesh Walk.");
+
+        while (m_ReadVertQueue.Count > 0)
+        {
+            Debug.Log($"Walking from {m_ReadVertQueue.Count} vertices.");
+            m_MeshWalkJob = new MeshWalkJob
             {
-                stepCount = 0;            
-                yield return null;
+                FoundTriIndices = m_FoundTriIndices,
+                HashIntersection = m_HashIntersection,
+                Vertices = m_Vertices,
+                SubMeshes = m_SubMeshes,
+                FlowBakerVertices = m_FlowBakerVertices,
+                ReadQueue = m_ReadVertQueue,
+                WriteQueue = m_WriteVertQueue,
+                WalkedVertices = m_WalkedVertices
+            };
+            m_MeshWalkJobHandle = m_MeshWalkJob.Schedule();
+            yield return new WaitUntil(() => m_MeshWalkJobHandle.IsCompleted);
+            m_MeshWalkJobHandle.Complete();
+
+            Debug.Log($"Walked and added {m_WriteVertQueue.Count} vertices.");
+
+            DrawDebugFlowRays();
+            
+            while (m_WriteVertQueue.Count > 0)
+            {
+                m_ReadVertQueue.Enqueue(m_WriteVertQueue.Dequeue());
             }
         }
+        
+        NativeList<Vector3> flowDirections = new NativeList<Vector3>(Allocator.Persistent);
         
         foreach (int walkedVertex in m_WalkedVertices)
         { 
             Vector3 averagedFlow = Vector3.zero;
             int totalFlowCount = 0;
-
-            totalFlowCount += m_FlowBakerVertices[walkedVertex].FlowDirections.Length;
-            foreach (Vector3 vector3 in m_FlowBakerVertices[walkedVertex].FlowDirections)
-                averagedFlow += vector3;
+            int flowFromStepCount = 5;
             
-            foreach( var overlappedWalkedVertex in m_FlowBakerVertices[walkedVertex].OverlappingVertIndices)
-            {
-                totalFlowCount += m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections.Length;
-                foreach (Vector3 vector3 in m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections)
-                    averagedFlow += vector3;
-            }
+            AddFlowDirectionsToAverage(walkedVertex, ref averagedFlow, ref totalFlowCount, flowFromStepCount);
+
+            // totalFlowCount += m_FlowBakerVertices[walkedVertex].FlowDirections.Count();
+            // foreach (Vector3 vector3 in m_FlowBakerVertices[walkedVertex].FlowDirections)
+            //     averagedFlow += vector3;
+            //
+            // foreach( var overlappedWalkedVertex in m_FlowBakerVertices[walkedVertex].OverlappingVertIndices)
+            // {
+            //     totalFlowCount += m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections.Count();
+            //     foreach (Vector3 vector3 in m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections)
+            //         averagedFlow += vector3;
+            // }
+            //
+            // foreach (var flowedFromVertex in m_FlowBakerVertices[walkedVertex].FlowedFromVertIndices)
+            // {
+            //     totalFlowCount += m_FlowBakerVertices[flowedFromVertex].FlowDirections.Count();
+            //     foreach (Vector3 vector3 in m_FlowBakerVertices[flowedFromVertex].FlowDirections)
+            //         averagedFlow += vector3;
+            //     
+            //     foreach( var overlappedFlowedFromVertex in m_FlowBakerVertices[flowedFromVertex].OverlappingVertIndices)
+            //     {
+            //         totalFlowCount += m_FlowBakerVertices[overlappedFlowedFromVertex].FlowDirections.Count();
+            //         foreach (Vector3 vector3 in m_FlowBakerVertices[overlappedFlowedFromVertex].FlowDirections)
+            //             averagedFlow += vector3;
+            //     }
+            // }
 
             if (totalFlowCount > 0)
             {
                 averagedFlow /= totalFlowCount;
+                // averagedFlow = averagedFlow.normalized;
                 m_AveragedFlowDirections[walkedVertex] = averagedFlow;
                 
                 averagedFlow = averagedFlow * 0.5f + (Vector3.one * 0.5f);
                 Color flowColor = new Color(averagedFlow.x, averagedFlow.y, averagedFlow.z, 1);
                 m_FlowColors[walkedVertex] = flowColor;
                 
-                foreach( var i in m_FlowBakerVertices[walkedVertex].OverlappingVertIndices)
+                foreach( var overlappedIndex in m_FlowBakerVertices[walkedVertex].OverlappingVertIndices)
                 {
-                    m_AveragedFlowDirections[i] = m_AveragedFlowDirections[walkedVertex];
-                    m_FlowColors[i] = m_FlowColors[walkedVertex];
+                    m_AveragedFlowDirections[overlappedIndex] = m_AveragedFlowDirections[walkedVertex];
+                    m_FlowColors[overlappedIndex] = m_FlowColors[walkedVertex];
                 }
             }
         }
         
         m_Mesh.colors = m_FlowColors.ToArray();
+        m_Mesh.UploadMeshData(false);
 
         flowDirections.Dispose();
-        // overlappingVerts.Dispose();
+
+        while (true)
+        {
+            DrawDebugFlowRays();
+            yield return null;
+        }
+    }
+
+    void AddFlowDirectionsToAverage(int vertIndex, ref Vector3 averagedFlow, ref int totalFlowCount, int flowedFromStepCount)
+    {
+        totalFlowCount += m_FlowBakerVertices[vertIndex].FlowDirections.Count();
+        foreach (Vector3 vector3 in m_FlowBakerVertices[vertIndex].FlowDirections)
+            averagedFlow += vector3;
+            
+        foreach( var overlappedWalkedVertex in m_FlowBakerVertices[vertIndex].OverlappingVertIndices)
+        {
+            totalFlowCount += m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections.Count();
+            foreach (Vector3 vector3 in m_FlowBakerVertices[overlappedWalkedVertex].FlowDirections)
+                averagedFlow += vector3;
+        }
+
+        flowedFromStepCount--;
+        if (flowedFromStepCount > 0)
+        {
+            foreach (var flowedFromVertex in m_FlowBakerVertices[vertIndex].FlowedFromVertIndices)
+            {
+                AddFlowDirectionsToAverage(flowedFromVertex, ref averagedFlow, ref totalFlowCount, flowedFromStepCount);
+            }
+        }
     }
 
     bool FlowFromAndOverlapsContain(int vertIndex, int neighborIndex)
@@ -540,48 +587,40 @@ public class VertexFlowBaker : MonoBehaviour
 
         return -1;
     }
-
-    Color[] m_RandomColors;
+    
     void OnDrawGizmos()
     {
-        if (!Application.isPlaying)       
-            return;
+        // if (!Application.isPlaying)       
+        //     return;
 
-        if (m_RandomColors == null)
-        {
-            m_RandomColors = new Color[m_Vertices.Length];
-            for (int i = 0; i < m_RandomColors.Length; ++i)
-            {
-                Color randomColor = new Color(Random.Range(0f, 1f), Random.Range(0f, 1f), Random.Range(0f, 1f), 1);
-                m_RandomColors[i] = randomColor;
-            }
-        }
-
-        foreach (int walkedVertex in m_WalkedVertices)
-        {
-            var vertPos = m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]);
-            // Gizmos.color = m_RandomColors[walkedVertex];
-            // Gizmos.DrawSphere(  vertPos , .0002f);
-            // if (m_FlowDirections[walkedVertex] != null)
-            // {
-            //     for (int i = 0; i < m_FlowDirections[walkedVertex].Count; ++i)
-            //     {
-            //         Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_FlowDirections[walkedVertex][i]) * .001f, new Color(i * 0.1f, i * 0.2f, i * 0.3f, 1));
-            //     }
-            // }
-
-            foreach (var fromIndex in m_FlowBakerVertices[walkedVertex].FlowedFromVertIndices)
-            {
-                var fromPos = m_TransformMatrix.MultiplyPoint(m_Vertices[fromIndex]);
-                Vector3 ray = (fromPos - vertPos).normalized; 
-                Color color = new Color(ray.x, ray.y, ray.z, 1);
-                // Debug.DrawRay(vertPos, ray / 2f, m_RandomColors[walkedVertex]);
-                Debug.DrawRay(vertPos, ray * .003f, color);
-            }
-
-            // Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex].normalized) * .005f, Color.yellow);
-            // Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]) , m_TransformMatrix.MultiplyVector(m_Normals[walkedVertex]) * .0001f, Color.green);
-        }
+        // if (!m_MeshWalkJobHandle.IsCompleted || !m_CalculateOverlappingVertsJobHandle.IsCompleted)
+        //     return;
+        
+        // foreach (int walkedVertex in m_WalkedVertices)
+        // {
+        //     var vertPos = m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]);
+        //     // Gizmos.color = m_RandomColors[walkedVertex];
+        //     // Gizmos.DrawSphere(  vertPos , .0002f);
+        //     // if (m_FlowDirections[walkedVertex] != null)
+        //     // {
+        //     //     for (int i = 0; i < m_FlowDirections[walkedVertex].Count; ++i)
+        //     //     {
+        //     //         Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_FlowDirections[walkedVertex][i]) * .001f, new Color(i * 0.1f, i * 0.2f, i * 0.3f, 1));
+        //     //     }
+        //     // }
+        //
+        //     foreach (var fromIndex in m_FlowBakerVertices[walkedVertex].FlowedFromVertIndices)
+        //     {
+        //         var fromPos = m_TransformMatrix.MultiplyPoint(m_Vertices[fromIndex]);
+        //         Vector3 ray = (fromPos - vertPos).normalized; 
+        //         Color color = new Color(ray.x, ray.y, ray.z, 1);
+        //         // Debug.DrawRay(vertPos, ray / 2f, m_RandomColors[walkedVertex]);
+        //         Debug.DrawRay(vertPos, ray * .003f, color);
+        //     }
+        //
+        //     // Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex].normalized) * .005f, Color.yellow);
+        //     // Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]) , m_TransformMatrix.MultiplyVector(m_Normals[walkedVertex]) * .0001f, Color.green);
+        // }
 
         // for (int i = 0; i < m_VertQueue.Count; ++i)
         // {
