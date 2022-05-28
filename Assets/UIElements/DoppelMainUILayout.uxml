@@ -1,0 +1,4 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" xsi="http://www.w3.org/2001/XMLSchema-instance" engine="UnityEngine.UIElements" editor="UnityEditor.UIElements" noNamespaceSchemaLocation="../../UIElementsSchema/UIElements.xsd" editor-extension-mode="False">
+    <Style src="project://database/Assets/UIElements/DoppelMainUIStyleSheet.uss?fileID=7433441132597879392&amp;guid=97e68364c9134c446805a288d3ea7477&amp;type=3#DoppelMainUIStyleSheet" />
+    <ui:VisualElement name="Toolbar" class="toolbar" />
+</ui:UXML>

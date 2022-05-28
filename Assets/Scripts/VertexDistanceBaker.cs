@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using Debug = UnityEngine.Debug;
 
-public class VertexFlowBaker : MonoBehaviour
+public class VertexDistanceBaker : MonoBehaviour
 {
     [SerializeField] 
     SkinnedMeshRenderer m_Renderer;
@@ -30,6 +30,7 @@ public class VertexFlowBaker : MonoBehaviour
     NativeArray<Vector3> m_Vertices;
     NativeArray<Vector3> m_Normals;
     NativeArray<Vector3> m_AveragedFlowDirections;
+    NativeArray<Vector3> m_SteppedPositions;
     NativeArray<FlowBakerVertex> m_FlowBakerVertices;
     NativeQueue<int> m_ReadVertQueue;
     NativeQueue<int> m_WriteVertQueue;
@@ -136,6 +137,7 @@ public class VertexFlowBaker : MonoBehaviour
 
         m_FlowColors = new NativeArray<Color>(data.vertexCount, Allocator.Persistent); 
         m_AveragedFlowDirections = new NativeArray<Vector3>(data.vertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
+        m_SteppedPositions = new NativeArray<Vector3>(data.vertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         m_FlowBakerVertices = new NativeArray<FlowBakerVertex>(data.vertexCount, Allocator.Persistent, NativeArrayOptions.ClearMemory);
         m_WalkedVertices = new NativeHashSet<int>(data.vertexCount, Allocator.Persistent);
         m_SubMeshes = new NativeArray<SubMesh>(data.subMeshCount, Allocator.Persistent);
@@ -151,7 +153,7 @@ public class VertexFlowBaker : MonoBehaviour
                 if (!m_FlowBakerVertices[vertIndex].IsCreated)
                 {
                     m_FlowBakerVertices[vertIndex] = new FlowBakerVertex(submeshIndex, 4);
-                    m_FlowColors[vertIndex] = Color.yellow;
+                    m_FlowColors[vertIndex] = Color.magenta;
                 }
 
                 // can i convert NativeArray to unsafelist directly somehow?
@@ -223,6 +225,8 @@ public class VertexFlowBaker : MonoBehaviour
 
         public NativeArray<FlowBakerVertex> FlowBakerVertices;
         
+        public NativeArray<Vector3> SteppedPositions;
+        
         [ReadOnly]
         public NativeArray<Vector3> Vertices;
 
@@ -234,6 +238,7 @@ public class VertexFlowBaker : MonoBehaviour
         
         [WriteOnly] 
         public NativeHashSet<int> WalkedVertices;
+        
         
         public void Execute()
         {
@@ -258,18 +263,23 @@ public class VertexFlowBaker : MonoBehaviour
                         int neighborVertIndex = SubMeshes[subMeshIndex].Triangles[neighborTriIndex];
                         if (vertIndex != neighborVertIndex && !FlowBakerVertices[vertIndex].OverlappingVertIndices.Contains(neighborVertIndex))
                         {
+                            Vector3 neighborVertPosition = Vertices[neighborVertIndex];
+                            Vector3 flowDirection = neighborVertPosition - vertPosition;
+                            
                             if (AddWalkedVerticesWithOverlaps(neighborVertIndex))
                             {
+                                // SteppedPositions[neighborVertIndex] = SteppedPositions[vertIndex] + flowDirection * .01f;
+                                // foreach (int overlapNeighborVertIndex in FlowBakerVertices[neighborVertIndex].OverlappingVertIndices)
+                                //     SteppedPositions[overlapNeighborVertIndex] = SteppedPositions[neighborVertIndex];
+
                                 WriteQueue.Enqueue(neighborVertIndex);
                             }
                             
                             if (!FlowFromAndOverlapsContain(vertIndex, neighborVertIndex) && 
                                 FlowBakerVertices[neighborVertIndex].FlowedFromVertIndices.Add(vertIndex))
                             {
-                                Vector3 neighborVertPosition = Vertices[neighborVertIndex];
-                                Vector3 flowDirection = neighborVertPosition - vertPosition;
-                                Vector3 normalizedFlowDirection = flowDirection.normalized;
-                                FlowBakerVertices[neighborVertIndex].FlowDirections.Add(normalizedFlowDirection);
+                                // Vector3 normalizedFlowDirection = flowDirection.normalized;
+                                FlowBakerVertices[neighborVertIndex].FlowDirections.Add(flowDirection);
                             }
                         }
                     }
@@ -517,6 +527,8 @@ public class VertexFlowBaker : MonoBehaviour
                 
             int nearestIndex = GetNearestVertex(m_StartPoints[i].transform.position);
             m_ReadVertQueue.Enqueue(nearestIndex);
+            m_SteppedPositions[nearestIndex] = m_Vertices[nearestIndex];
+            
             AddWalkedVerticesWithOverlaps(nearestIndex);
         }
 
@@ -532,6 +544,7 @@ public class VertexFlowBaker : MonoBehaviour
                 Vertices = m_Vertices,
                 SubMeshes = m_SubMeshes,
                 FlowBakerVertices = m_FlowBakerVertices,
+                SteppedPositions = m_SteppedPositions,
                 ReadQueue = m_ReadVertQueue,
                 WriteQueue = m_WriteVertQueue,
                 WalkedVertices = m_WalkedVertices
@@ -563,21 +576,52 @@ public class VertexFlowBaker : MonoBehaviour
         yield return new WaitUntil(() => m_CalculateAverageDirectionsFlowJobHandle.IsCompleted);
         m_CalculateAverageDirectionsFlowJobHandle.Complete();
         
-        m_Mesh.colors = m_FlowColors.ToArray();
-        m_Mesh.UploadMeshData(false);
-
         // smooth 4 times
         const int SmoothIterationCount = 1;
         for (int i = 0; i < SmoothIterationCount; ++i)
         {
             Debug.Log($"Smooth Iteration {i}");
             yield return StartCoroutine(ApplyDirectionSmooth());
-            
-            m_Mesh.colors = m_FlowColors.ToArray();
-            m_Mesh.UploadMeshData(false);
         }
         
-        m_Mesh.colors = m_FlowColors.ToArray();
+        // m_Mesh.colors = m_FlowColors.ToArray();
+        // float maxPosition = float.MinValue;
+        // float minPosition = float.MaxValue;
+        // for (int i = 0; i < m_SteppedPositions.Length; ++i)
+        // {
+        //     if (m_SteppedPositions[i].x > maxPosition)
+        //         maxPosition = m_SteppedPositions[i].x;
+        //     if (m_SteppedPositions[i].y > maxPosition)
+        //         maxPosition = m_SteppedPositions[i].y;
+        //     if (m_SteppedPositions[i].z > maxPosition)
+        //         maxPosition = m_SteppedPositions[i].z;
+        //     
+        //     if (m_SteppedPositions[i].x < minPosition)
+        //         minPosition = m_SteppedPositions[i].x;
+        //     if (m_SteppedPositions[i].y < minPosition)
+        //         minPosition = m_SteppedPositions[i].y;
+        //     if (m_SteppedPositions[i].z < minPosition)
+        //         minPosition = m_SteppedPositions[i].z;
+        // }
+        
+        
+        Color[] stepColors = new Color[m_SteppedPositions.Length];
+        Vector3[] distortedVerts = new Vector3[m_SteppedPositions.Length];
+        for (int i = 0; i < stepColors.Length; ++i)
+        {
+            // Vector3 stepPos = Vector3.Scale(m_Vertices[i], (m_AveragedFlowDirections[i]));
+            Vector3 stepPos = m_Vertices[i];
+            distortedVerts[i] = stepPos;
+            
+            stepColors[i] = new Color(
+                stepPos.x, 
+                stepPos.y, 
+                stepPos.z, 
+                  1);
+        }
+
+        m_Mesh.colors = stepColors;
+        // m_Mesh.vertices = distortedVerts;
         m_Mesh.UploadMeshData(false);
 
         while (true)
@@ -623,69 +667,10 @@ public class VertexFlowBaker : MonoBehaviour
                 var fromPos = m_TransformMatrix.MultiplyPoint(m_Vertices[fromIndex]);
                 Vector3 ray = (fromPos - vertPos).normalized; 
                 // Color color = new Color(ray.x, ray.y, ray.z, 1);
-                Debug.DrawRay(vertPos, ray * .003f, m_FlowColors[walkedVertex]);
-                Debug.DrawRay(vertPos,  m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex]) * .006f, m_FlowColors[walkedVertex]);
+                Debug.DrawRay(vertPos, ray * .006f, m_FlowColors[walkedVertex]);
+                Debug.DrawRay(vertPos,  m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex]) * .01f, m_FlowColors[walkedVertex]);
                 
             }
         }
-    }
-    
-    void OnDrawGizmos()
-    {
-        // if (!Application.isPlaying)       
-        //     return;
-
-        // if (!m_MeshWalkJobHandle.IsCompleted || !m_CalculateOverlappingVertsJobHandle.IsCompleted)
-        //     return;
-        
-        // foreach (int walkedVertex in m_WalkedVertices)
-        // {
-        //     var vertPos = m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]);
-        //     // Gizmos.color = m_RandomColors[walkedVertex];
-        //     // Gizmos.DrawSphere(  vertPos , .0002f);
-        //     // if (m_FlowDirections[walkedVertex] != null)
-        //     // {
-        //     //     for (int i = 0; i < m_FlowDirections[walkedVertex].Count; ++i)
-        //     //     {
-        //     //         Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_FlowDirections[walkedVertex][i]) * .001f, new Color(i * 0.1f, i * 0.2f, i * 0.3f, 1));
-        //     //     }
-        //     // }
-        //
-        //     foreach (var fromIndex in m_FlowBakerVertices[walkedVertex].FlowedFromVertIndices)
-        //     {
-        //         var fromPos = m_TransformMatrix.MultiplyPoint(m_Vertices[fromIndex]);
-        //         Vector3 ray = (fromPos - vertPos).normalized; 
-        //         Color color = new Color(ray.x, ray.y, ray.z, 1);
-        //         // Debug.DrawRay(vertPos, ray / 2f, m_RandomColors[walkedVertex]);
-        //         Debug.DrawRay(vertPos, ray * .003f, color);
-        //     }
-        //
-        //     // Debug.DrawRay(vertPos, m_TransformMatrix.MultiplyVector(m_AveragedFlowDirections[walkedVertex].normalized) * .005f, Color.yellow);
-        //     // Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[walkedVertex]) , m_TransformMatrix.MultiplyVector(m_Normals[walkedVertex]) * .0001f, Color.green);
-        // }
-
-        // for (int i = 0; i < m_VertQueue.Count; ++i)
-        // {
-        //     int vertIndex = m_VertQueue.ToArray()[i];
-        //     Gizmos.color = Color.cyan;
-        //     var point = m_TransformMatrix.MultiplyPoint(m_Vertices[vertIndex]);
-        //     Gizmos.DrawWireCube(  point , Vector3.one * .0002f);
-        //     point.y -= .0002f;
-        //
-        //     Handles.Label(point, vertIndex.ToString());
-        //     foreach (var overlapping in m_Overlapping[vertIndex])
-        //     {
-        //         point.y -= .0002f;
-        //         Handles.Label(point, overlapping.ToString());
-        //     }
-        // }
-        
-        
-        // Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[m_NearestIndex]) , m_TransformMatrix.MultiplyVector(m_Normals[m_NearestIndex]) * .001f, Color.red);
-
-        // for (int i = 0; i < m_Vertices.Count; ++i)
-        // {
-        //     Debug.DrawRay(  m_TransformMatrix.MultiplyPoint(m_Vertices[i]) , m_TransformMatrix.MultiplyVector(m_Normals[i]) * .001f, Color.blue);
-        // }
     }
 }

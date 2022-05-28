@@ -1,0 +1,26 @@
+.toolbar {
+    background-color: rgba(100, 100, 100, 200);
+    height: 100%;
+    width: 64px;
+    depth: 100;
+    border-width: 2px;
+    border-color: black;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.toolbar-button {
+    background-color: rgba(150, 150, 150, 200);
+    width: 48px;
+    height: 48px;
+}
+
+.toolbar-button:hover {
+    background-color: rgba(180, 180, 180, 200);
+}
+
+.toolbar-button:active {
+    background-color: rgba(120, 120, 120, 200);
+}
