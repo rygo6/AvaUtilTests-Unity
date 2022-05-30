@@ -14,7 +14,7 @@ public class MainUI : MonoBehaviour
 
         var createPointButton = new Button
         {
-            text = "Create\nCurve"
+            text = "Curve\nTool"
         };
         createPointButton.AddToClassList("toolbar-button");
         createPointButton.clicked += CreatePointButtonOnClicked;
