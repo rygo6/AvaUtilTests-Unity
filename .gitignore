@@ -4,6 +4,7 @@
 [Bb]uild/
 [Bb]uilds/
 [Lo]ogs/
+[Uu]serSettings/
 Assets/AssetStoreTools*
 .DS_Store
 .idea/
