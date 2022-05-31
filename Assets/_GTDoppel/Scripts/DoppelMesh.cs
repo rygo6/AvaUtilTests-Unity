@@ -86,11 +86,14 @@ namespace GeoTetra.GTDoppel
             m_OutAnchorCursor.position = position;
             m_InAnchorCursor.localPosition = -m_OutAnchorCursor.localPosition;
             
-            int knotCount = m_Toolbar.CurrentlySelectedItem.Container.Spline.Count;
-            var knot = m_Toolbar.CurrentlySelectedItem.Container.Spline[knotCount - 1];
+            int knotCount = m_Toolbar.CurrentlySelectedItem.NativeSpline.Count;
+            if (knotCount == 0)
+                return;
+            
+            var knot = m_Toolbar.CurrentlySelectedItem.NativeSpline.Knots[knotCount - 1];
             knot.TangentOut = m_OutAnchorCursor.localPosition * k_TangentMultiplier;
             knot.TangentIn = m_InAnchorCursor.localPosition * k_TangentMultiplier;
-            m_Toolbar.CurrentlySelectedItem.Container.Spline[knotCount - 1] = knot;
+            m_Toolbar.CurrentlySelectedItem.UpdateKnot(knotCount - 1, knot);
         }
 
         public void OnEndDrag(PointerEventData eventData)
@@ -98,6 +101,10 @@ namespace GeoTetra.GTDoppel
             // Debug.Log($"OnEndDrag {eventData.GetHashCode()}");
             m_OutAnchorCursor.gameObject.SetActive(false);
             m_InAnchorCursor.gameObject.SetActive(false);
+            // if (m_Toolbar.CurrentlySelectedItem != null)
+            // {
+            //     m_Toolbar.CurrentlySelectedItem.UpdateMeshCollider();
+            // }
         }
 
         public void OnPointerDown(PointerEventData eventData)
@@ -112,7 +119,7 @@ namespace GeoTetra.GTDoppel
             }
             else
             {
-                m_Toolbar.CurrentlySelectedItem.Container.Spline.Add(new BezierKnot(m_PointerDownPosition, 0, 0, m_PointerDownRotation));
+                m_Toolbar.CurrentlySelectedItem.AddKnot(new BezierKnot(m_PointerDownPosition, 0, 0, m_PointerDownRotation));
             }
 
             m_Cursor.position = m_PointerDownPosition;
