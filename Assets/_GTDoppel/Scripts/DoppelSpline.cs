@@ -29,7 +29,12 @@ namespace GeoTetra.GTDoppel
             m_Points = new NativeList<Vector3>(128,Allocator.Persistent);
             m_SplineContainer.Spline.changed += SplineOnChanged;
         }
-        
+
+        void OnDestroy()
+        {
+            m_Points.Dispose();
+        }
+
         void OnValidate()
         {
             m_SplineContainer = GetComponent<SplineContainer>();

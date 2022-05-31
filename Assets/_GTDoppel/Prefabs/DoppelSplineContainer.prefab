@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 4917550327160661735}
   - component: {fileID: 4917550327160661732}
   m_Layer: 0
-  m_Name: SplineContainer
+  m_Name: DoppelSplineContainer
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -79,7 +79,7 @@ LineRenderer:
   m_Positions: []
   m_Parameters:
     serializedVersion: 3
-    widthMultiplier: 0.025
+    widthMultiplier: 0.01
     widthCurve:
       serializedVersion: 2
       m_Curve:
@@ -164,4 +164,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d9dd4cf612254c08bf888d5bca6bb2d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_Segments: 128
+  m_SplineContainer: {fileID: 4917550327160661735}
+  m_Line: {fileID: 4917550327160661734}
+  m_StepSize: 0.01

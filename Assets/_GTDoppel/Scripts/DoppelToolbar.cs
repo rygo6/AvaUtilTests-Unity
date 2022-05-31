@@ -5,10 +5,10 @@ using UnityEngine.Splines;
 
 public class DoppelToolbar : MonoBehaviour
 {
-    SplineContainer m_CurrentlySelectedItem;
+    DoppelSpline m_CurrentlySelectedItem;
     DoppelTool m_CurrentTool;
 
-    public SplineContainer CurrentlySelectedItem
+    public DoppelSpline CurrentlySelectedItem
     {
         get => m_CurrentlySelectedItem;
         set => m_CurrentlySelectedItem = value;
