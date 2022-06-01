@@ -124,7 +124,7 @@ namespace GeoTetra.GTSplines
         /// <param name="eventDisplayIndex">The display index used.</param>
         /// <param name="distanceToClipPlane">The distance between the near and far clipping planes along the ray.</param>
         /// <returns>True if the operation was successful. false if it was not possible to compute, such as the eventPosition being outside of the view.</returns>
-        protected bool ComputeRayAndDistance(PointerEventData eventData, ref Ray ray, ref int eventDisplayIndex, ref float distanceToClipPlane)
+        bool ComputeRayAndDistance(PointerEventData eventData, ref Ray ray, ref int eventDisplayIndex, ref float distanceToClipPlane)
         {
             if (eventCamera == null)
                 return false;

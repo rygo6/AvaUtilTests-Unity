@@ -7,7 +7,7 @@ using UnityEngine.Splines;
 namespace GeoTetra.GTSplines
 {
     [RequireComponent(typeof(LineRenderer))]
-    public class GTSplineContainer : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+    public class GTSplineContainer : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler, IPointerClickHandler
     {
         [SerializeField]
         LineRenderer m_Line;
@@ -86,6 +86,11 @@ namespace GeoTetra.GTSplines
         {
             m_Line.startColor = Color.gray;
             m_Line.endColor = Color.gray;
+        }
+
+        public void OnPointerClick(PointerEventData eventData)
+        {
+            throw new NotImplementedException();
         }
     }
 }
