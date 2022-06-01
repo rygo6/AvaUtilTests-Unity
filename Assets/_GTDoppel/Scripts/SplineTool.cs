@@ -1,6 +1,7 @@
 using GeoTetra.GTSplines;
 using UnityEngine;
-using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.Splines;
 
 public class SplineTool : DoppelTool
@@ -12,33 +13,39 @@ public class SplineTool : DoppelTool
     [SerializeField] Transform m_InAnchorCursor;
     
     const float k_TangentMultiplier = .1f;
-    PointerEventData m_EnterPointerEventData;
-    PointerEventData m_PressPointerEventData;
+    ExtendedPointerEventData m_EnterPointerEventData;
+    ExtendedPointerEventData m_PressPointerEventData;
     
-    void Update()
+    public override void OnPointerUpdate(ExtendedPointerEventData data, ToolData toolData)
     {
-        if (m_PressPointerEventData == null && m_EnterPointerEventData != null)
+        var module = data.currentInputModule as InputSystemUIInputModule;
+        if (!module.leftClick.action.IsPressed())
         {
-            m_Cursor.transform.position = m_EnterPointerEventData.pointerCurrentRaycast.worldPosition;
+            m_Cursor.transform.position = toolData.InteractionPosition;
+            m_Cursor.rotation = toolData.InteractionRotation;
         }
     }
 
-    public override void OnPointerClick(PointerEventData data, ToolData toolData)
+    public override void OnPointerClick(ExtendedPointerEventData data, ToolData toolData)
     { }
 
-    public override void OnPointerEnter(PointerEventData data, ToolData toolData)
+    public override void OnPointerEnter(ExtendedPointerEventData data, ToolData toolData)
     {
         m_EnterPointerEventData = data;
-        if (!data.dragging)
-            m_Cursor.transform.position = data.pointerCurrentRaycast.worldPosition;
+        var module = data.currentInputModule as InputSystemUIInputModule;
+        if (!module.leftClick.action.IsPressed())
+        {
+            m_Cursor.transform.position = toolData.InteractionPosition;
+            m_Cursor.rotation = toolData.InteractionRotation;
+        }
     }
 
-    public override void OnPointerExit(PointerEventData data, ToolData toolData)
+    public override void OnPointerExit(ExtendedPointerEventData data, ToolData toolData)
     {
         m_EnterPointerEventData = null;
     }
 
-    public override void OnPointerDown(PointerEventData data, ToolData toolData)
+    public override void OnPointerDown(ExtendedPointerEventData data, ToolData toolData)
     {
         if (m_Toolbar.CurrentlySelectedItem == null)
         {
@@ -57,18 +64,18 @@ public class SplineTool : DoppelTool
         m_PressPointerEventData = data;
     }
 
-    public override void OnPointerUp(PointerEventData data, ToolData toolData)
+    public override void OnPointerUp(ExtendedPointerEventData data, ToolData toolData)
     {
         m_PressPointerEventData = null;
     }
 
-    public override void OnBeginDrag(PointerEventData data, ToolData toolData)
+    public override void OnBeginDrag(ExtendedPointerEventData data, ToolData toolData)
     {
         m_OutAnchorCursor.gameObject.SetActive(true);
         m_InAnchorCursor.gameObject.SetActive(true);
     }
 
-    public override void OnDrag(PointerEventData data, ToolData toolData)
+    public override void OnDrag(ExtendedPointerEventData data, ToolData toolData)
     {
         m_OutAnchorCursor.position = toolData.InteractionPosition;
         m_InAnchorCursor.localPosition = -m_OutAnchorCursor.localPosition;
@@ -85,7 +92,7 @@ public class SplineTool : DoppelTool
         spline.UpdateKnot(knotCount - 1, knot);
     }
 
-    public override void OnEndDrag(PointerEventData data, ToolData toolData)
+    public override void OnEndDrag(ExtendedPointerEventData data, ToolData toolData)
     {
         m_OutAnchorCursor.gameObject.SetActive(false);
         m_InAnchorCursor.gameObject.SetActive(false);
@@ -101,12 +108,13 @@ public struct ToolData
 
 public abstract class DoppelTool : MonoBehaviour
 {
-    public abstract void OnPointerClick(PointerEventData data, ToolData toolData);
-    public abstract void OnPointerEnter(PointerEventData data, ToolData toolData);
-    public abstract void OnPointerExit(PointerEventData data, ToolData toolData);
-    public abstract void OnPointerDown(PointerEventData data, ToolData toolData);
-    public abstract void OnPointerUp(PointerEventData data, ToolData toolData);
-    public abstract void OnBeginDrag(PointerEventData data, ToolData toolData);
-    public abstract void OnDrag(PointerEventData data, ToolData toolData);
-    public abstract void OnEndDrag(PointerEventData data, ToolData toolData);
+    public abstract void OnPointerUpdate(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnPointerClick(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnPointerEnter(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnPointerExit(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnPointerDown(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnPointerUp(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnBeginDrag(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnDrag(ExtendedPointerEventData data, ToolData toolData);
+    public abstract void OnEndDrag(ExtendedPointerEventData data, ToolData toolData);
 }
