@@ -1,14 +1,15 @@
 using GeoTetra.GTDoppel;
+using GeoTetra.GTSplines;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Splines;
 
 public class DoppelToolbar : MonoBehaviour
 {
-    DoppelSpline m_CurrentlySelectedItem;
+    GTSplineContainer m_CurrentlySelectedItem;
     DoppelTool m_CurrentTool;
 
-    public DoppelSpline CurrentlySelectedItem
+    public GTSplineContainer CurrentlySelectedItem
     {
         get => m_CurrentlySelectedItem;
         set => m_CurrentlySelectedItem = value;

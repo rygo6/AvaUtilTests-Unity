@@ -16,7 +16,7 @@ namespace GeoTetra.GTSplines
     /// <remarks>
     /// NativeSpline is compatible with the job system.
     /// </remarks>
-    public struct UnsafeNativeSpline : ISpline, IDisposable
+    public struct GTUnsafeNativeSpline : ISpline, IDisposable
     {
         UnsafeList<BezierKnot> m_Knots;
         // As we cannot make a NativeArray of NativeArray all segments lookup tables are stored in a single array
@@ -68,7 +68,7 @@ namespace GeoTetra.GTSplines
         /// <inheritdoc cref="GetEnumerator"/>
         IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-        public UnsafeNativeSpline(int initialCapacity, Allocator allocator = Allocator.Temp)
+        public GTUnsafeNativeSpline(int initialCapacity, Allocator allocator = Allocator.Temp)
         {
             m_Knots = new UnsafeList<BezierKnot>(initialCapacity, allocator);
             m_Closed = false;
@@ -81,7 +81,7 @@ namespace GeoTetra.GTSplines
         /// </summary>
         /// <param name="spline">The <see cref="ISpline"/> object to convert to a <see cref="NativeSpline"/>.</param>
         /// <param name="allocator">The memory allocation method to use when reserving space for native arrays.</param>
-        public UnsafeNativeSpline(ISpline spline, Allocator allocator = Allocator.Temp)
+        public GTUnsafeNativeSpline(ISpline spline, Allocator allocator = Allocator.Temp)
             : this(spline, spline.Closed, float4x4.identity, allocator) { }
 
         /// <summary>
@@ -90,7 +90,7 @@ namespace GeoTetra.GTSplines
         /// <param name="spline">The <see cref="ISpline"/> object to convert to a <see cref="NativeSpline"/>.</param>
         /// <param name="transform">A transform matrix to be applied to the spline knots and tangents.</param>
         /// <param name="allocator">The memory allocation method to use when reserving space for native arrays.</param>
-        public UnsafeNativeSpline(ISpline spline, float4x4 transform, Allocator allocator = Allocator.Temp)
+        public GTUnsafeNativeSpline(ISpline spline, float4x4 transform, Allocator allocator = Allocator.Temp)
             : this(spline, spline.Closed, transform, allocator) { }
 
         /// <summary>
@@ -100,7 +100,7 @@ namespace GeoTetra.GTSplines
         /// <param name="closed">Whether the spline is open (has a start and end point) or closed (forms an unbroken loop).</param>
         /// <param name="transform">Apply a transformation matrix to the control <see cref="Knots"/>.</param>
         /// <param name="allocator">The memory allocation method to use when reserving space for native arrays.</param>
-        public UnsafeNativeSpline(IReadOnlyList<BezierKnot> knots, bool closed, float4x4 transform, Allocator allocator = Allocator.Temp)
+        public GTUnsafeNativeSpline(IReadOnlyList<BezierKnot> knots, bool closed, float4x4 transform, Allocator allocator = Allocator.Temp)
         {
             int kc = knots.Count;
             m_Knots = new UnsafeList<BezierKnot>(knots.Count, allocator);

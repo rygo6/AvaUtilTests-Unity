@@ -1,17 +1,26 @@
+using System;
 using System.Collections.Generic;
-using GeoTetra.GTDoppel;
-using UnityEngine.UI;
+using Unity.Burst;
+using Unity.Collections;
+using Unity.Jobs;
+using Unity.Mathematics;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.Splines;
 
-namespace UnityEngine.EventSystems
+namespace GeoTetra.GTSplines
 {
     /// <summary>
     /// Simple event system using physics raycasts.
     /// </summary>
     [RequireComponent(typeof(Camera))]
-    public class SplineRaycaster : BaseRaycaster
+    public class GTSplineRaycaster : BaseRaycaster
     {
         [SerializeField] 
-        SplinePool m_SplinePool;
+        float m_SelectScreenDistance = 4f;
+        
+        [SerializeField] 
+        GTSplinePool m_SplinePool;
         
         /// <summary>
         /// Const to use for clarity when no event mask is set
@@ -34,7 +43,7 @@ namespace UnityEngine.EventSystems
         protected int m_LastMaxRayIntersections = 0;
         
 
-        protected SplineRaycaster()
+        protected GTSplineRaycaster()
         {}
 
         public override Camera eventCamera
@@ -89,6 +98,24 @@ namespace UnityEngine.EventSystems
             set { m_MaxRayIntersections = value; }
         }
 
+        protected override void Awake()
+        {
+            base.Awake();
+            m_Distances = new NativeList<float>(64, Allocator.Persistent);
+            m_NearestPoints = new NativeList<Vector3>(64, Allocator.Persistent);
+            m_NearestIndex = new NativeReference<int>(-1,Allocator.Persistent);
+        }
+
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+            m_RaycastSplinesJobHandle.Complete();
+            m_NearestRaycastPointJobHandle.Complete();
+            m_Distances.Dispose();
+            m_NearestPoints.Dispose();
+            m_NearestIndex.Dispose();
+        }
+
         /// <summary>
         /// Returns a ray going from camera through the event position and the distance between the near and far clipping planes along that ray.
         /// </summary>
@@ -139,61 +166,114 @@ namespace UnityEngine.EventSystems
             float distanceToClipPlane = 0;
             if (!ComputeRayAndDistance(eventData, ref ray, ref displayIndex, ref distanceToClipPlane))
                 return;
+            
+            Debug.DrawRay(ray.origin, ray.direction, Color.red);
 
-            int hitCount = 0;
+            // You are filling in the result from the last frame
+            m_RaycastSplinesJobHandle.Complete();
+            m_NearestRaycastPointJobHandle.Complete();
+            if (m_NearestIndex.Value != -1)
+            {
+                var nearestSplineScreenPoint = eventCamera.WorldToScreenPoint(m_NearestPoints[m_NearestIndex.Value]);
+                var distance = Vector3.Distance(nearestSplineScreenPoint, eventData.position);
+                if (distance < m_SelectScreenDistance)
+                {
+                    var result = new RaycastResult
+                    {
+                        gameObject = m_SplinePool.Splines[m_NearestIndex.Value].gameObject,
+                        module = this,
+                        distance = Vector3.Distance(m_NearestPoints[m_NearestIndex.Value], ray.origin),
+                        worldPosition = m_NearestPoints[m_NearestIndex.Value],
+                        worldNormal = Vector3.up, // fill in spline normal
+                        screenPosition = eventData.position,
+                        displayIndex = displayIndex,
+                        index = resultAppendList.Count,
+                        sortingLayer = 0,
+                        sortingOrder = 0
+                    };
+                    resultAppendList.Add(result);
+                }
+                
+                Debug.DrawRay(m_NearestPoints[m_NearestIndex.Value], Vector3.up * .1f, Color.blue);
+            }
 
-            // if (m_MaxRayIntersections == 0)
-            // {
-            //     if (ReflectionMethodsCache.Singleton.raycast3DAll == null)
-            //         return;
-            //
-            //     m_Hits = ReflectionMethodsCache.Singleton.raycast3DAll(ray, distanceToClipPlane, finalEventMask);
-            //     hitCount = m_Hits.Length;
-            // }
-            // else
-            // {
-            //     if (ReflectionMethodsCache.Singleton.getRaycastNonAlloc == null)
-            //         return;
-            //     if (m_LastMaxRayIntersections != m_MaxRayIntersections)
-            //     {
-            //         m_Hits = new RaycastHit[m_MaxRayIntersections];
-            //         m_LastMaxRayIntersections = m_MaxRayIntersections;
-            //     }
-            //
-            //     hitCount = ReflectionMethodsCache.Singleton.getRaycastNonAlloc(ray, m_Hits, distanceToClipPlane, finalEventMask);
-            // }
-            //
-            // if (hitCount != 0)
-            // {
-            //     if (hitCount > 1)
-            //         System.Array.Sort(m_Hits, 0, hitCount, RaycastHitComparer.instance);
-            //
-            //     for (int b = 0, bmax = hitCount; b < bmax; ++b)
-            //     {
-            //         var result = new RaycastResult
-            //         {
-            //             gameObject = m_Hits[b].collider.gameObject,
-            //             module = this,
-            //             distance = m_Hits[b].distance,
-            //             worldPosition = m_Hits[b].point,
-            //             worldNormal = m_Hits[b].normal,
-            //             screenPosition = eventData.position,
-            //             displayIndex = displayIndex,
-            //             index = resultAppendList.Count,
-            //             sortingLayer = 0,
-            //             sortingOrder = 0
-            //         };
-            //         resultAppendList.Add(result);
-            //     }
-            // }
+            if (m_NearestPoints.Length != m_SplinePool.Splines.Count)
+            {
+                m_NearestPoints.Length = m_SplinePool.Splines.Count;
+                m_Distances.Length = m_SplinePool.Splines.Count;
+            }
+            
+            m_RaycastSplinesJob = new RaycastSplinesJob
+            {
+                InputRay = ray,
+                Splines = m_SplinePool.GetNativeSplinesAndUpdateDirty(),
+                NearestPoints = m_NearestPoints,
+                Distances = m_Distances
+            };
+            m_RaycastSplinesJobHandle = m_RaycastSplinesJob.Schedule(m_SplinePool.Splines.Count, 1);
+
+            m_NearestRaycastPointJob = new NearestRaycastPointJob()
+            {
+                Distances = m_Distances.AsDeferredJobArray(),
+                NearestIndex = m_NearestIndex
+            };
+            m_NearestRaycastPointJobHandle = m_NearestRaycastPointJob.Schedule(m_RaycastSplinesJobHandle);
         }
         
-        private class RaycastHitComparer : IComparer<RaycastHit>
+        NativeList<float> m_Distances;
+        NativeList<Vector3> m_NearestPoints;
+        NativeReference<int> m_NearestIndex;
+        RaycastSplinesJob m_RaycastSplinesJob;
+        JobHandle m_RaycastSplinesJobHandle;
+        NearestRaycastPointJob m_NearestRaycastPointJob;
+        JobHandle m_NearestRaycastPointJobHandle;
+        
+        [BurstCompile]
+        struct RaycastSplinesJob : IJobParallelFor
         {
-            public static RaycastHitComparer instance = new RaycastHitComparer();
-            public int Compare(RaycastHit x, RaycastHit y)
+            [ReadOnly]
+            public Ray InputRay;
+
+            [ReadOnly]
+            public NativeArray<GTUnsafeNativeSpline> Splines;
+
+            [WriteOnly] 
+            public NativeArray<Vector3> NearestPoints;
+            
+            [WriteOnly] 
+            public NativeArray<float> Distances;
+
+            public void Execute(int index)
             {
-                return x.distance.CompareTo(y.distance);
+                float distance = SplineUtility.GetNearestPoint(Splines[index], InputRay, out float3 nearest, out float t);
+                NearestPoints[index] = nearest;
+                Distances[index] = distance;
+            }
+        }
+        
+        [BurstCompile]
+        struct NearestRaycastPointJob : IJob
+        {
+            [ReadOnly] 
+            public NativeArray<float> Distances;
+
+            [WriteOnly] 
+            public NativeReference<int> NearestIndex;
+
+            public void Execute()
+            {
+                float maxDistance = float.MaxValue;
+                int nearestIndex = -1;
+                for (int i = 0; i < Distances.Length; ++i)
+                {
+                    if (Distances[i] < maxDistance)
+                    {
+                        maxDistance = Distances[i];
+                        nearestIndex = i;
+                    }
+                }
+
+                NearestIndex.Value = nearestIndex;
             }
         }
     }

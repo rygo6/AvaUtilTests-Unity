@@ -1,4 +1,4 @@
-using System.Runtime.Serialization;
+using GeoTetra.GTSplines;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.Splines;
@@ -13,7 +13,7 @@ namespace GeoTetra.GTDoppel
         [SerializeField] Transform m_OutAnchorCursor;
         [SerializeField] Transform m_InAnchorCursor;
 
-        [SerializeField] SplinePool m_SplinePool;
+        [SerializeField] GTSplinePool m_GtSplinePool;
 
         [SerializeField] DoppelToolbar m_Toolbar;
 
@@ -114,7 +114,7 @@ namespace GeoTetra.GTDoppel
 
             if (m_Toolbar.CurrentlySelectedItem == null)
             {
-                var spline = m_SplinePool.CreateSpline(m_PointerDownPosition, m_PointerDownRotation);
+                var spline = m_GtSplinePool.CreateSpline(m_PointerDownPosition, m_PointerDownRotation);
                 m_Toolbar.CurrentlySelectedItem = spline;
             }
             else

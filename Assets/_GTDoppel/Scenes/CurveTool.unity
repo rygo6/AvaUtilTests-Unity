@@ -222,6 +222,7 @@ GameObject:
   - component: {fileID: 201884707}
   - component: {fileID: 201884706}
   - component: {fileID: 201884709}
+  - component: {fileID: 201884710}
   m_Layer: 0
   m_Name: MainCamera
   m_TagString: MainCamera
@@ -311,6 +312,23 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 4294967295
   m_MaxRayIntersections: 0
+--- !u!114 &201884710
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 201884705}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5ceffa9215036a24e8049aa5d4dd40f6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  m_SplinePool: {fileID: 1379071017}
+  m_EventMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  m_MaxRayIntersections: 0
 --- !u!1 &386122546 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 919132149155446097, guid: e7d6d91d44c4602499ba2bc32b39c3fc,
@@ -346,7 +364,7 @@ MonoBehaviour:
   m_Cursor: {fileID: 1417723566}
   m_OutAnchorCursor: {fileID: 1325685889}
   m_InAnchorCursor: {fileID: 1202169558}
-  m_SplinePool: {fileID: 1379071017}
+  m_GtSplinePool: {fileID: 1379071017}
   m_Toolbar: {fileID: 852015921}
 --- !u!1 &852015917
 GameObject:
@@ -840,7 +858,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 372bea5ec5e650749bb6e4c11168cfad, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  m_SplineContainerPrefab: {fileID: 4917550327160661732, guid: b6f0ab839dd95d741b4ef956e7509e32,
+  m_SplineContainerContainerPrefab: {fileID: 4917550327160661732, guid: b6f0ab839dd95d741b4ef956e7509e32,
     type: 3}
 --- !u!1 &1417723562
 GameObject:

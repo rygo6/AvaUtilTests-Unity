@@ -1,41 +1,40 @@
 using System;
-using System.Collections.Generic;
-using GeoTetra.GTSplines;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.Splines;
 
-namespace GeoTetra.GTDoppel
+namespace GeoTetra.GTSplines
 {
-    [RequireComponent(typeof(LineRenderer), typeof(SplineContainer))]
-    public class DoppelSpline : MonoBehaviour
+    [RequireComponent(typeof(LineRenderer))]
+    public class GTSplineContainer : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     {
-        // [SerializeField]
-        // SplineContainer m_SplineContainer;
-        
         [SerializeField]
         LineRenderer m_Line;
-
-        [SerializeField] 
-        MeshCollider m_MeshCollider;
-
+        
         [SerializeField] 
         float m_StepSize = .1f;
+
+        public event Action<GTSplineContainer> OnChanged;
         
-        bool m_Dirty;
         NativeList<Vector3> m_InterpolatedPoints; 
-        public UnsafeNativeSpline m_NativeSpline;
+        GTUnsafeNativeSpline m_NativeSpline;
 
         public LineRenderer Line => m_Line;
-
-        public UnsafeNativeSpline NativeSpline => m_NativeSpline;
+        public GTUnsafeNativeSpline NativeSpline => m_NativeSpline;
+        public GTSplinePool ParentSplinePool { get; private set; }
+        public int ParentSplinePoolIndex { get; private set; }
 
         void Awake()
         {
             m_InterpolatedPoints = new NativeList<Vector3>(128,Allocator.Persistent);
-            m_NativeSpline = new UnsafeNativeSpline(8, Allocator.Persistent);
-            // m_SplineContainer.Spline.changed += SplineOnChanged;
+            m_NativeSpline = new GTUnsafeNativeSpline(8, Allocator.Persistent);
+        }
+
+        public void Initialize(GTSplinePool parentSplinePool, int parentSplinePoolIndex)
+        {
+            ParentSplinePool = parentSplinePool;
+            ParentSplinePoolIndex = parentSplinePoolIndex;
         }
 
         void OnDestroy()
@@ -46,7 +45,6 @@ namespace GeoTetra.GTDoppel
 
         void OnValidate()
         {
-            // m_SplineContainer = GetComponent<SplineContainer>();
             m_Line = GetComponent<LineRenderer>();
         }
 
@@ -74,6 +72,20 @@ namespace GeoTetra.GTDoppel
 
             m_Line.positionCount = count;
             m_Line.SetPositions(m_InterpolatedPoints);
+            
+            OnChanged?.Invoke(this);
+        }
+
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            m_Line.startColor = Color.green;
+            m_Line.endColor = Color.green;
+        }
+
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            m_Line.startColor = Color.gray;
+            m_Line.endColor = Color.gray;
         }
     }
 }
