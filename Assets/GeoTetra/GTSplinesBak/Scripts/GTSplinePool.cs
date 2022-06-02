@@ -1,15 +1,13 @@
 using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.Splines;
 
 namespace GeoTetra.GTSplines
 {
     public class GTSplinePool : MonoBehaviour
     {
-        [SerializeField] 
-        GTSplineContainer m_SplineContainerContainerPrefab;
+        [SerializeField] GTSplineContainer m_SplineContainerContainerPrefab;
 
         List<GTSplineContainer> m_Splines = new();
 
@@ -34,7 +32,7 @@ namespace GeoTetra.GTSplines
             splineInstance.Initialize(this, m_Splines.Count);
             splineInstance.OnChanged += SplineInstanceOnOnChanged;
             m_Splines.Add(splineInstance);
-            m_NativeSplines.Add(splineInstance.NativeSpline);
+            m_DirtySplines.Enqueue(splineInstance);
             splineInstance.AddKnot(new BezierKnot(startPoint, 0, 0, startRotation));
             return splineInstance;
         }
@@ -46,7 +44,10 @@ namespace GeoTetra.GTSplines
             while (m_DirtySplines.Count > 0)
             {
                 var spline = m_DirtySplines.Dequeue();
-                m_NativeSplines[spline.ParentSplinePoolIndex] = spline.NativeSpline;
+                if (m_NativeSplines.Length <= spline.ParentSplinePoolIndex)
+                    m_NativeSplines.Add(spline.NativeSpline);
+                else
+                    m_NativeSplines[spline.ParentSplinePoolIndex] = spline.NativeSpline;
             }
 
             return m_NativeSplines;
