@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 4917550327160661734}
   - component: {fileID: 4917550327160661732}
   m_Layer: 0
-  m_Name: GTSplineContainer
+  m_Name: SplineContainer
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -147,5 +147,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Line: {fileID: 4917550327160661734}
-  m_MeshCollider: {fileID: 0}
   m_StepSize: 0.01
+  m_SplinePointPrefab: {fileID: 7227153592487265054, guid: 815a2a8360eb6e84a8f938e3b2b9ca4f,
+    type: 3}

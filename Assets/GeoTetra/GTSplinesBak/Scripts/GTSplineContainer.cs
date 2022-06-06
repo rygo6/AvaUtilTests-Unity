@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -15,10 +16,13 @@ namespace GeoTetra.GTSplines
         [SerializeField] 
         float m_StepSize = .1f;
 
+        [SerializeField] 
+        Transform m_SplinePointPrefab;
         public event Action<GTSplineContainer> OnChanged;
         
         NativeList<Vector3> m_InterpolatedPoints; 
         GTUnsafeNativeSpline m_NativeSpline;
+        readonly List<Transform> m_SplinePoints = new();
 
         public LineRenderer Line => m_Line;
         public GTUnsafeNativeSpline NativeSpline => m_NativeSpline;
@@ -48,15 +52,19 @@ namespace GeoTetra.GTSplines
             m_Line = GetComponent<LineRenderer>();
         }
 
-        public void AddKnot(BezierKnot item)
+        public void AddKnot(BezierKnot knot)
         {
-            m_NativeSpline.AddKnot(item);
+            m_NativeSpline.AddKnot(knot);
+            var splinePoint = Instantiate(m_SplinePointPrefab, knot.Position, knot.Rotation);
+            m_SplinePoints.Add(splinePoint);
             SplineOnChanged();
         }
         
-        public void UpdateKnot(int index, BezierKnot item)
+        public void UpdateKnot(int index, BezierKnot knot)
         {
-            m_NativeSpline.UpdateKnot(index, item);
+            m_NativeSpline.UpdateKnot(index, knot);
+            m_SplinePoints[index].position = knot.Position;
+            m_SplinePoints[index].rotation = knot.Rotation;
             SplineOnChanged();
         }
         

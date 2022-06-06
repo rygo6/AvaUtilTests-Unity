@@ -773,7 +773,7 @@ GameObject:
   - component: {fileID: 1351347145}
   - component: {fileID: 1351347148}
   m_Layer: 5
-  m_Name: Panel
+  m_Name: EmpySpace
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
