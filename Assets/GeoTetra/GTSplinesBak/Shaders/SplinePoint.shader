@@ -32,6 +32,9 @@ Shader "GeoTetra/GTSplines/SplinePoint"
                 UNITY_VERTEX_INPUT_INSTANCE_ID 
             };
 
+            
+            StructuredBuffer<float> spline;
+
             v2f vert (appdata v)
             {
                 v2f o;

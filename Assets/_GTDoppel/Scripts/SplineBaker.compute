@@ -1,0 +1,101 @@
+#include "Packages/com.unity.splines/Shader/Spline.cginc"
+
+#pragma kernel BakeSpline
+
+
+SplineInfo info = float4(0,0,0,0);
+StructuredBuffer<BezierCurve> curves;
+StructuredBuffer<float> curveLengths;
+RWStructuredBuffer<float3> positions;
+float positionsCount;
+
+int2 resolution;
+int trianglePixelDilate;
+RWTexture2D<float4> bakedTexture;
+StructuredBuffer<float3> vertices;
+int verticesCount;
+StructuredBuffer<float2> uvs;
+StructuredBuffer<int> tris;
+int trisCount;
+int trisStride;
+
+bool InTriangle(float2 A,float2 B, float2 C, float2 P)
+{
+    float2 v0 = C - A;
+    float2 v1 = B - A;
+    float2 v2 = P - A;
+        
+    float dot00 = dot(v0, v0);
+    float dot01 = dot(v0, v1);
+    float dot02 = dot(v0, v2);
+    float dot11 = dot(v1, v1);
+    float dot12 = dot(v1, v2);
+        
+    float invDenom = 1 / (dot00 * dot11 - dot01 * dot01);
+    float u = (dot11 * dot02 - dot01 * dot12) * invDenom;
+    float v = (dot00 * dot12 - dot01 * dot02) * invDenom;
+        
+    return (u >= 0) && (v >= 0) && (u + v < 1);
+}
+
+[numthreads(64,1,1)]
+void BakeSpline (uint3 id : SV_DispatchThreadID)
+{
+    // if (id.x != 10) return;
+    
+    int triStart = id.x * trisStride;
+    int triEnd = triStart + trisStride;
+    
+    for (int i = triStart; i < triEnd && i < trisCount; i += 3)
+    {
+        int tri0 = tris[i];
+        int tri1 = tris[i + 1];
+        int tri2 = tris[i + 2];
+
+        float3 vert0 = vertices[tri0];
+        float3 vert1 = vertices[tri1];
+        float3 vert2 = vertices[tri2];
+        
+        float2 uv0 = uvs[tri0];
+        float2 uv1 = uvs[tri1];
+        float2 uv2 = uvs[tri2];
+
+        float2 median = (uv0 + uv1 + uv2) / 3.0;
+
+        float2 normalizedPixelDilate = float2((float)trianglePixelDilate / (float)resolution.x, (float)trianglePixelDilate / (float)resolution.y);
+
+        float2 uvMedianDirection0 = normalize(uv0 - median);
+        float2 dilatedUv0 = uv0 + uvMedianDirection0 * normalizedPixelDilate;
+        float2 uvMedianDirection1 = normalize(uv1 - median);
+        float2 dilatedUv1 = uv1 + uvMedianDirection1 * normalizedPixelDilate;
+        float2 uvMedianDirection2 = normalize(uv2 - median);
+        float2 dilatedUv2 = uv2 + uvMedianDirection2 * normalizedPixelDilate;
+        
+        float2 minUv = min(min(uv0, uv1), uv2);
+        float2 maxUv = max(max(uv0, uv1), uv2);
+
+        int2 uvInt0 = int2(round(uv0.x * resolution.x), round(uv0.y * resolution.y));
+        int2 uvInt1 = int2(round(uv1.x * resolution.x), round(uv1.y * resolution.y));
+        int2 uvInt2 = int2(round(uv2.x * resolution.x), round(uv2.y * resolution.y));
+
+        int2 minUvInt = min(min(uvInt0, uvInt1), uvInt2);
+        int2 maxUvInt = max(max(uvInt0, uvInt1), uvInt2);
+        
+        // Color color = new Color(Random.Range(0f, 1f), Random.Range(0f, 1f), Random.Range(0f, 1f), 1);
+        
+        for (int x = minUvInt.x - trianglePixelDilate; x < maxUvInt.x + trianglePixelDilate; ++x)
+        {
+            for (int y = minUvInt.y - trianglePixelDilate; y < maxUvInt.y + trianglePixelDilate; ++y)
+            {
+                float2 testUV = float2((float)x / (float)resolution.x, (float)y / (float)resolution.y);
+                if (InTriangle(dilatedUv0, dilatedUv1, dilatedUv2, testUV))
+                {
+                    // m_Texture2D.SetPixel(x, y, color);
+                    bakedTexture[int2(x, y)] = float4(1,1,0,1);
+                }
+            }
+        }
+    }
+
+    // bakedTexture[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+}

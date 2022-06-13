@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
@@ -15,6 +16,8 @@ namespace GeoTetra.GTSplines
 
         NativeList<GTUnsafeNativeSpline> m_NativeSplines;
         public List<GTSplineContainer> Splines => m_Splines;
+
+        public event Action<GTSplineContainer> OnSplineDirty;
 
         void Awake()
         {
@@ -34,6 +37,7 @@ namespace GeoTetra.GTSplines
             m_Splines.Add(splineInstance);
             m_DirtySplines.Enqueue(splineInstance);
             splineInstance.AddKnot(new BezierKnot(startPoint, 0, 0, startRotation));
+            OnSplineDirty?.Invoke(splineInstance);
             return splineInstance;
         }
 
@@ -56,6 +60,7 @@ namespace GeoTetra.GTSplines
         void SplineInstanceOnOnChanged(GTSplineContainer spline)
         {
             m_DirtySplines.Enqueue(spline);
+            OnSplineDirty?.Invoke(spline);
         }
     }
 }

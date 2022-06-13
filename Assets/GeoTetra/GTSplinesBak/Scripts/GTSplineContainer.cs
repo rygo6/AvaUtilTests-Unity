@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Unity.Collections;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -20,19 +21,38 @@ namespace GeoTetra.GTSplines
         Transform m_SplinePointPrefab;
         public event Action<GTSplineContainer> OnChanged;
         
-        NativeList<Vector3> m_InterpolatedPoints; 
-        GTUnsafeNativeSpline m_NativeSpline;
         readonly List<Transform> m_SplinePoints = new();
+        NativeList<Vector3> m_InterpolatedPoints;
+        NativeList<float> m_Lengths;
+        NativeList<BezierCurve> m_Curves;
+        GTUnsafeNativeSpline m_NativeSpline;
 
-        public LineRenderer Line => m_Line;
-        public GTUnsafeNativeSpline NativeSpline => m_NativeSpline;
         public GTSplinePool ParentSplinePool { get; private set; }
         public int ParentSplinePoolIndex { get; private set; }
+        public LineRenderer Line => m_Line;
+        public GTUnsafeNativeSpline NativeSpline => m_NativeSpline;
+        public NativeList<Vector3> InterpolatedPoints => m_InterpolatedPoints;
+        public NativeList<float> Lengths => m_Lengths;
+
+        public NativeList<BezierCurve> Curves => m_Curves;
+        
+        public Vector4 Info => new Vector4(m_NativeSpline.Count, m_NativeSpline.Closed ? 1 : 0, m_NativeSpline.GetLength(), 0);
 
         void Awake()
         {
             m_InterpolatedPoints = new NativeList<Vector3>(128,Allocator.Persistent);
             m_NativeSpline = new GTUnsafeNativeSpline(8, Allocator.Persistent);
+            m_Lengths = new NativeList<float>(8, Allocator.Persistent);
+            m_Curves = new NativeList<BezierCurve>(8, Allocator.Persistent);
+            
+            AddKnot(new BezierKnot(new Vector3(-1, 0, 0)));
+            AddKnot(new BezierKnot(new Vector3(0, .5f, .25f)));
+            AddKnot(new BezierKnot(new Vector3(1, 1, .5f)));
+        }
+
+        void Update()
+        {
+            UpdateKnot(1, new BezierKnot(new Vector3(0, Mathf.PingPong(Time.time, 1f), .25f)));
         }
 
         public void Initialize(GTSplinePool parentSplinePool, int parentSplinePoolIndex)
@@ -45,6 +65,8 @@ namespace GeoTetra.GTSplines
         {
             m_InterpolatedPoints.Dispose();
             m_NativeSpline.Dispose();
+            m_Lengths.Dispose();
+            m_Curves.Dispose();
         }
 
         void OnValidate()
@@ -70,6 +92,16 @@ namespace GeoTetra.GTSplines
         
         void SplineOnChanged()
         {
+            // Could be faster? Only update specific curve/length via Update knot?
+            m_Lengths.Clear();
+            m_Curves.Clear();
+            for (int i = 0; i < m_NativeSpline.Count; ++i)
+            {
+                m_Lengths.Add(m_NativeSpline.GetCurveLength(i));
+                m_Curves.Add(m_NativeSpline.GetCurve(i));
+            }
+            
+            // Use InterpolateCompute shader?
             m_InterpolatedPoints.Clear();
             float curveLength = m_NativeSpline.GetLength();
             int count = (int)(curveLength / m_StepSize);
@@ -99,6 +131,30 @@ namespace GeoTetra.GTSplines
         public void OnPointerClick(PointerEventData eventData)
         {
             throw new NotImplementedException();
+        }
+
+        public GTSplineData Serialize()
+        {
+            var data = new GTSplineData
+            {
+                Knots = m_NativeSpline.Knots.ToArray()
+            };
+            return data;
+        }
+        
+        public void Deserialize(GTSplineData data)
+        {
+            for (int i = 0; i < data.Knots.Length; ++i)
+            {
+                AddKnot(data.Knots[i]);   
+            }
+        }
+
+        [Serializable]
+        public struct GTSplineData
+        {
+            public int Guid;
+            public BezierKnot[] Knots;
         }
     }
 }

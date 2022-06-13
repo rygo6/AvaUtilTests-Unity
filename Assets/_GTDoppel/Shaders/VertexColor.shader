@@ -55,7 +55,7 @@ Shader "Unlit/VertexColor"
                 fixed4 col = tex2D(_MainTex, i.uv);
                 // apply fog
                 UNITY_APPLY_FOG(i.fogCoord, col);
-                return i.color * _Color;
+                return i.color * _Color * col;
             }
             ENDCG
         }
