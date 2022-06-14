@@ -18,6 +18,7 @@ namespace GeoTetra.GTEventSystem
     {
         PointerEventData m_EnterPointerEventData;
         PointerEventData m_PressPointerEventData;
+        GameObject m_PressGameObject;
         Plane m_LastEnterPlane;
         Coroutine m_UpdateCoroutine;
 
@@ -97,6 +98,7 @@ namespace GeoTetra.GTEventSystem
         public void OnPointerDown(PointerEventData eventData)
         {
             m_PressPointerEventData = eventData;
+            m_PressGameObject = eventData.pointerPressRaycast.gameObject;
             for (int i = 0; i < GetCurrentTools.Count; ++i)
                 GetCurrentTools[i].OnPointerDown(eventData as ExtendedPointerEventData,
                     eventData.currentInputModule as InputSystemUIInputModule,
@@ -111,6 +113,7 @@ namespace GeoTetra.GTEventSystem
                     eventData.currentInputModule as InputSystemUIInputModule,
                     ToolData(eventData));
             m_PressPointerEventData = null;
+            m_PressGameObject = null;
             CheckShouldEnable();
         }
 
@@ -145,6 +148,7 @@ namespace GeoTetra.GTEventSystem
                     InteractionSourceRay = ray,
                     InteractionPosition = position,
                     InteractionRotation = rotation,
+                    PressGameObject = m_PressGameObject
                 };
             }
             else
@@ -157,6 +161,7 @@ namespace GeoTetra.GTEventSystem
                     InteractionSourceRay = ray,
                     InteractionPosition = position,
                     InteractionRotation = rotation,
+                    PressGameObject = m_PressGameObject
                 };
             }
         }

@@ -8,6 +8,7 @@ namespace GeoTetra.GTEventSystem
         public Ray InteractionSourceRay;
         public Vector3 InteractionPosition;
         public Quaternion InteractionRotation;
+        public GameObject PressGameObject; // ya it only registers it in EventData on press so save it
     }
 
     public abstract class EventReceiverRelay : MonoBehaviour
