@@ -1,0 +1,17 @@
+{
+    "name": "GeoTetra.GTCamera",
+    "rootNamespace": "",
+    "references": [
+        "GUID:68b7654b401b2604bad89cd1c98cca44",
+        "GUID:75469ad4d38634e559750d17036d5f7c"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

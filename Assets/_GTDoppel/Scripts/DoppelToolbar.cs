@@ -1,12 +1,13 @@
+using GeoTetra.GTEventSystem;
 using UnityEngine;
 
 public class DoppelToolbar : MonoBehaviour
 {
     [SerializeField] 
-    DoppelTool m_InitialTool;
+    EventReceiverRelay m_InitialTool;
     
     GameObject m_CurrentlySelectedItem;
-    DoppelTool m_CurrentTool;
+    EventReceiverRelay m_CurrentTool;
 
     public GameObject CurrentlySelectedItem
     {
@@ -14,7 +15,7 @@ public class DoppelToolbar : MonoBehaviour
         set => m_CurrentlySelectedItem = value;
     }
 
-    public DoppelTool CurrentTool
+    public EventReceiverRelay CurrentTool
     {
         get => m_CurrentTool;
         set => m_CurrentTool = value;

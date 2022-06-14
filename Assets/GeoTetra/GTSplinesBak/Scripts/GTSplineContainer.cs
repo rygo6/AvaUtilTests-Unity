@@ -44,17 +44,8 @@ namespace GeoTetra.GTSplines
             m_NativeSpline = new GTUnsafeNativeSpline(8, Allocator.Persistent);
             m_Lengths = new NativeList<float>(8, Allocator.Persistent);
             m_Curves = new NativeList<BezierCurve>(8, Allocator.Persistent);
-            
-            AddKnot(new BezierKnot(new Vector3(-1, 0, 0)));
-            AddKnot(new BezierKnot(new Vector3(0, .5f, .25f)));
-            AddKnot(new BezierKnot(new Vector3(1, 1, .5f)));
         }
-
-        void Update()
-        {
-            UpdateKnot(1, new BezierKnot(new Vector3(0, Mathf.PingPong(Time.time, 1f), .25f)));
-        }
-
+        
         public void Initialize(GTSplinePool parentSplinePool, int parentSplinePoolIndex)
         {
             ParentSplinePool = parentSplinePool;
@@ -130,7 +121,7 @@ namespace GeoTetra.GTSplines
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            throw new NotImplementedException();
+            // throw new NotImplementedException();
         }
 
         public GTSplineData Serialize()

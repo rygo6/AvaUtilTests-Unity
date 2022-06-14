@@ -40,7 +40,7 @@ Shader "Unlit/SplineBakerShader"
             #define INFINITY_FLOAT 3.402823466e+38F
             #define RESOLUTIONS_SEGMENT_COUNT_MIN 4
             #define RESOLUTION_SEGMENT_COUNT_MAX 1024
-            #define SPLINE_ITERATIONS 4
+            #define SPLINE_ITERATIONS 2
             #define SPLINE_RESOLUTION 64
 
             SplineInfo info;
