@@ -24,17 +24,13 @@ public class PseudoAOBaker : MonoBehaviour
     Matrix4x4 m_TransformTRS;
     Texture2D m_Texture2D;
     int m_VertLength;
-    int m_IndicesLength;
     RenderTexture m_RenderTexture;
     CommandBuffer m_CommandBuffer;
     ComputeBuffer m_VerticesBuffer;
-    ComputeBuffer m_AOVertsBuffer;
-    ComputeBuffer m_IndicesBuffer;
-    // ComputeBuffer m_NormalsBuffer;
+    ComputeBuffer m_NormalsBuffer;
     Mesh.MeshDataArray m_DataArray;
     NativeArray<Vector3> m_Vertices;
-    // NativeArray<Vector3> m_Normals;
-    NativeArray<int> m_Indices;
+    NativeArray<Vector3> m_Normals;
 
     void Start()
     {
@@ -51,34 +47,24 @@ public class PseudoAOBaker : MonoBehaviour
         data.GetVertices(m_Vertices);
         m_VertLength = data.vertexCount;
         
-        var subMesh = data.GetSubMesh(0);
-        m_Indices = new NativeArray<int>(subMesh.indexCount, Allocator.Persistent);
-        data.GetIndices(m_Indices, 0);
-        m_IndicesLength = subMesh.indexCount;
+        m_Normals = new NativeArray<Vector3>(data.vertexCount, Allocator.Persistent);  
+        data.GetNormals(m_Normals);
 
         m_VerticesBuffer = new ComputeBuffer(m_VertLength, sizeof(float) * 3);
-        m_AOVertsBuffer = new ComputeBuffer(m_VertLength, sizeof(float));
-        // m_NormalsBuffer = new ComputeBuffer(m_VertLength, sizeof(float) * 3);
-        m_IndicesBuffer = new ComputeBuffer(m_IndicesLength, sizeof(int));
-        
+        m_NormalsBuffer = new ComputeBuffer(m_VertLength, sizeof(float) * 3);
+
         m_VerticesBuffer.SetData(m_Vertices);
-        // m_NormalsBuffer.SetData(m_Normals);
-        m_IndicesBuffer.SetData(m_Indices);
+        m_NormalsBuffer.SetData(m_Normals);
         
-        
-        m_AOBakerMaterial.SetBuffer("verts", m_VerticesBuffer);
-        // m_AOBakerMaterial.SetBuffer("_normals", m_NormalsBuffer);
-        m_AOBakerMaterial.SetBuffer("indices", m_IndicesBuffer);
-        m_AOBakerMaterial.SetInt("numVerts", m_VertLength);
-        m_AOBakerMaterial.SetInt("numIndices", m_IndicesLength);
-        m_AOBakerMaterial.SetBuffer("aoVerts", m_AOVertsBuffer);
+        m_AOBakerMaterial.SetBuffer("_vertices", m_VerticesBuffer);
+        m_AOBakerMaterial.SetBuffer("_normals", m_NormalsBuffer);
+        m_AOBakerMaterial.SetInt("_vertLength", m_VertLength);
     }
 
     void OnDestroy()
     {
         m_Vertices.Dispose();
-        m_Indices.Dispose();
-        // m_Normals.Dispose();
+        m_Normals.Dispose();
         m_DataArray.Dispose();
     }
 
@@ -88,16 +74,16 @@ public class PseudoAOBaker : MonoBehaviour
         {
             Bake();
         }
+
+        Bake();
     }
     
     void Bake()
     {
-        m_AOBakerMaterial.SetBuffer("verts", m_VerticesBuffer);
-        m_AOBakerMaterial.SetBuffer("indices", m_IndicesBuffer);
-        m_AOBakerMaterial.SetInt("numVerts", m_VertLength);
-        m_AOBakerMaterial.SetInt("numIndices", m_IndicesLength);
-        m_AOBakerMaterial.SetBuffer("aoVerts", m_AOVertsBuffer);
-        
+        m_AOBakerMaterial.SetBuffer("_vertices", m_VerticesBuffer);
+        m_AOBakerMaterial.SetBuffer("_normals", m_NormalsBuffer);
+        m_AOBakerMaterial.SetInt("_vertLength", m_VertLength);
+
         m_CommandBuffer.Clear();
         m_CommandBuffer.SetRenderTarget(m_RenderTexture);
         m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
@@ -105,25 +91,5 @@ public class PseudoAOBaker : MonoBehaviour
         m_TransformTRS = Matrix4x4.TRS(m_MeshFilter.transform.position, m_MeshFilter.transform.rotation, m_MeshFilter.transform.lossyScale);
         m_CommandBuffer.DrawMesh(m_MeshFilter.sharedMesh, m_TransformTRS, m_AOBakerMaterial, 0);
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
-
-        float[] aoArray = new float[m_VertLength];
-        m_AOVertsBuffer.GetData(aoArray);
-        Color[] colorArray = new Color[m_VertLength];
-        for (int i = 0; i < m_VertLength; ++i)
-        {
-            colorArray[i] = new Color(aoArray[i], aoArray[i], aoArray[i], 1);
-        }
-
-        m_MeshFilter.sharedMesh.colors = colorArray;
-        m_MeshFilter.sharedMesh.UploadMeshData(false);
-    }
-
-    void OnDrawGizmos()
-    {
-        // for (int v = 0; v < 10; ++v)
-        // {
-        //     Vector3 pos = m_Vertices[v];
-        //     Handles.Label(pos, v.ToString());
-        // }
     }
 }
