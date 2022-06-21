@@ -14,6 +14,7 @@ Shader "Unlit/SplineBakerShader"
         Pass
         {
             Cull off
+            Conservative true
 
             HLSLPROGRAM
             #pragma vertex vert

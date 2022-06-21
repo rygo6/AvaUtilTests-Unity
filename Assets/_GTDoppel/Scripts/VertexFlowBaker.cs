@@ -165,8 +165,8 @@ public class VertexFlowBaker : MonoBehaviour
         
         m_ReadVertQueue = new NativeQueue<int>(Allocator.Persistent);
         m_WriteVertQueue = new NativeQueue<int>(Allocator.Persistent);
-        m_FoundTriIndices = new NativeList<int>( 4, Allocator.TempJob);
-        m_HashIntersection = new NativeHashSet<int>(16, Allocator.TempJob);
+        m_FoundTriIndices = new NativeList<int>( 4, Allocator.Persistent);
+        m_HashIntersection = new NativeHashSet<int>(16, Allocator.Persistent);
         
         StartCoroutine(WalkVertices());
     }
@@ -563,19 +563,19 @@ public class VertexFlowBaker : MonoBehaviour
         yield return new WaitUntil(() => m_CalculateAverageDirectionsFlowJobHandle.IsCompleted);
         m_CalculateAverageDirectionsFlowJobHandle.Complete();
         
-        m_Mesh.colors = m_FlowColors.ToArray();
-        m_Mesh.UploadMeshData(false);
-
-        // smooth 4 times
-        const int SmoothIterationCount = 1;
-        for (int i = 0; i < SmoothIterationCount; ++i)
-        {
-            Debug.Log($"Smooth Iteration {i}");
-            yield return StartCoroutine(ApplyDirectionSmooth());
-            
-            m_Mesh.colors = m_FlowColors.ToArray();
-            m_Mesh.UploadMeshData(false);
-        }
+        // m_Mesh.colors = m_FlowColors.ToArray();
+        // m_Mesh.UploadMeshData(false);
+        //
+        // // smooth 4 times
+        // const int SmoothIterationCount = 1;
+        // for (int i = 0; i < SmoothIterationCount; ++i)
+        // {
+        //     Debug.Log($"Smooth Iteration {i}");
+        //     yield return StartCoroutine(ApplyDirectionSmooth());
+        //     
+        //     m_Mesh.colors = m_FlowColors.ToArray();
+        //     m_Mesh.UploadMeshData(false);
+        // }
         
         m_Mesh.colors = m_FlowColors.ToArray();
         m_Mesh.UploadMeshData(false);

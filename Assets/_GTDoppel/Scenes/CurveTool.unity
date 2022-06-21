@@ -516,19 +516,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _orbitView: {fileID: 898791872}
+  m_MomemtumFadeRate: 8
   _xSpeed: 10
   _ySpeed: 10
-  _xMinLimit: 0
-  _xMaxLimit: 0
   _yMinLimit: -80
   _yMaxLimit: 80
   _pinchSpeed: 1
   _minZoom: 5
   _maxZoom: 1
   _strafeSpeed: 1
-  _minStrafe: {x: -2, y: -2, z: -2}
-  _maxStrafe: {x: 2, y: 2, z: 2}
-  _strafeAxis: 6
 --- !u!4 &882164128
 Transform:
   m_ObjectHideFlags: 0
