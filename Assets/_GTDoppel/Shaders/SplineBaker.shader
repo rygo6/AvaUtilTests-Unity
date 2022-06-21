@@ -1,4 +1,4 @@
-Shader "Unlit/SplineBakerShader"
+Shader "Unlit/SplineBaker"
 {
     Properties
     {

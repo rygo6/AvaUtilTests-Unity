@@ -5,7 +5,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Splines;
 
-public class AOBaker : MonoBehaviour
+public class SplineBaker : MonoBehaviour
 {
     [SerializeField] 
     GTSplinePool m_SplinePool;
