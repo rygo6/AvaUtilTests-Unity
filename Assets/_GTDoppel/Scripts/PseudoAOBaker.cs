@@ -1,10 +1,9 @@
 using Unity.Collections;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 
-public class AOBaker : MonoBehaviour
+public class PseudoAOBaker : MonoBehaviour
 {
     [SerializeField] 
     Vector2Int m_Resolution = new(256, 256);
