@@ -17,8 +17,6 @@ public class PseudoAOBaker : MonoBehaviour
     [SerializeField] 
     Material m_AOBakerMaterial;
 
-    [SerializeField] Transform m_TestTransform;
-
     readonly Matrix4x4 m_LookMatrix = Matrix4x4.TRS(new Vector3(0, 0, -1), Quaternion.identity, Vector3.one);
     readonly Matrix4x4 m_OrthoMatrix = Matrix4x4.Ortho(-1, 1, -1, 1, 0.01f, 2);
     Matrix4x4 m_TransformTRS;
