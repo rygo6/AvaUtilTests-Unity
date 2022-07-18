@@ -19,10 +19,12 @@ public class MeshAOBaker : MonoBehaviour
 
     [SerializeField] 
     MeshFilter m_MeshFilter;
-
-    [FormerlySerializedAs("m_MeshMaterial")] 
+    
     [SerializeField] 
     Material m_AOBakeMaterial;
+    
+    [SerializeField] 
+    Material m_ContributingBakeMaterial;
     
     [SerializeField] 
     ComputeShader m_DownsizeComputeShader;
@@ -54,10 +56,14 @@ public class MeshAOBaker : MonoBehaviour
     int m_DownSizeKernel;
     
     ComputeBuffer m_ArgsBuffer;
+    ComputeBuffer m_BakeMatrixBuffer;
+    ComputeBuffer m_ContributingMatrixBuffer;
     uint[] m_Args = new uint[5] { 0, 0, 0, 0, 0 };
 
     void Start()
     {
+        m_ContributingBakeMaterial = Instantiate(m_AOBakeMaterial);
+        
         m_TempTransform = new GameObject("TempTransform").transform;
 
         m_CommandBuffer = new CommandBuffer();
@@ -69,7 +75,6 @@ public class MeshAOBaker : MonoBehaviour
         m_VertLength = m_BakeMesh.vertexCount;
 
         m_Normals = new NativeArray<Vector3>(m_BakeMesh.normals, Allocator.Persistent);
-        
         
 
         Debug.Log("m_VertLength " + m_VertLength);
@@ -138,12 +143,10 @@ public class MeshAOBaker : MonoBehaviour
         m_ThreadCount.y = m_Resolution.y / m_GridCellRenderSize / threadCount;
         Debug.Log(m_ThreadCount.x + " " + m_ThreadCount.y);
         
+        m_BakeMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
+        m_ContributingMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         m_ArgsBuffer = new ComputeBuffer(1, m_Args.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-        m_Args[0] = (uint) m_BakeMesh.triangles.Length;
-        m_Args[1] = (uint) m_BakeMesh.vertexCount;
-        m_Args[2] = (uint) 0;
-        m_Args[3] = (uint) 0;
-        m_ArgsBuffer.SetData(m_Args);
+        
     }
 
     void OnDestroy()
@@ -151,6 +154,8 @@ public class MeshAOBaker : MonoBehaviour
         m_Vertices.Dispose();
         m_Normals.Dispose();
         m_ArgsBuffer.Dispose();
+        m_BakeMatrixBuffer.Dispose();
+        m_ContributingMatrixBuffer.Dispose();
     }
 
     void Update()
@@ -174,40 +179,56 @@ public class MeshAOBaker : MonoBehaviour
         v++;
         return v;
     }
+    
+    // List<Matrix4x4> bakingMatrices = new List<Matrix4x4>();
+    // List<Matrix4x4> contributingMatrices = new List<Matrix4x4>();
 
     void Bake()
     {
-        m_AOBakeMaterial.SetInt("_RenderTextureSizeX", m_Resolution.x);
-        m_AOBakeMaterial.SetInt("_RenderTextureSizeY", m_Resolution.y);
-        m_AOBakeMaterial.SetInt("_CellSize", m_GridCellRenderSize);
-        
-        m_MeshRenderer.sharedMaterial.SetInt("_RenderTextureSizeX", m_Resolution.x);
-        m_MeshRenderer.sharedMaterial.SetInt("_RenderTextureSizeY", m_Resolution.y);
-        m_MeshRenderer.sharedMaterial.SetInt("_CellSize", m_GridCellRenderSize);
-        
         m_CommandBuffer.Clear();
         m_CommandBuffer.SetRenderTarget(m_AOBakeTexture);
         m_CommandBuffer.ClearRenderTarget(true, true, Color.white);
         m_CommandBuffer.SetViewProjectionMatrices(m_LookMatrix, m_OrthoMatrix);
         
-        
-        List<Matrix4x4> bakingMatrices = new List<Matrix4x4>();
-        List<Matrix4x4> contributingMatrices = new List<Matrix4x4>();
-
-        const int maxInstances = 1023;
-        for (int i = 0; i < m_VertLength && i < maxInstances; ++i)
+        var matrixBuffer  = m_BakeMatrixBuffer.BeginWrite<Matrix4x4>(0, m_VertLength);
+        var contributingMatrixBuffer  = m_ContributingMatrixBuffer.BeginWrite<Matrix4x4>(0, m_VertLength);
+        const int maxVertCount = 1024;
+        for (int i = 0; i < m_VertLength && i < maxVertCount; ++i)
         {
             Matrix4x4 bakingTransformMatrix = TransformMatrix(m_MeshFilter.transform, i);
-            bakingMatrices.Add(MultiplyCameraMatrix(bakingTransformMatrix));
+            bakingTransformMatrix = MultiplyCameraMatrix(bakingTransformMatrix);
+            matrixBuffer[i] = bakingTransformMatrix;
             
             Matrix4x4 contributingTransformMatrix = Matrix4x4.TRS(m_ContributingMeshes[0].transform.position, m_ContributingMeshes[0].transform.rotation, m_ContributingMeshes[0].transform.lossyScale);
             contributingTransformMatrix = bakingTransformMatrix * contributingTransformMatrix;
-            contributingMatrices.Add(MultiplyCameraMatrix(contributingTransformMatrix));
+            contributingTransformMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
+            contributingMatrixBuffer[i] = contributingTransformMatrix;
         }
+        m_BakeMatrixBuffer.EndWrite<Matrix4x4>(m_VertLength);
+        m_ContributingMatrixBuffer.EndWrite<Matrix4x4>(m_VertLength);
+
+        m_AOBakeMaterial.SetInt("_RenderTextureSizeX", m_Resolution.x);
+        m_AOBakeMaterial.SetInt("_RenderTextureSizeY", m_Resolution.y);
+        m_AOBakeMaterial.SetInt("_CellSize", m_GridCellRenderSize);
+        m_ContributingBakeMaterial.SetInt("_RenderTextureSizeX", m_Resolution.x);
+        m_ContributingBakeMaterial.SetInt("_RenderTextureSizeY", m_Resolution.y);
+        m_ContributingBakeMaterial.SetInt("_CellSize", m_GridCellRenderSize);
         
-        m_CommandBuffer.DrawMeshInstanced(m_MeshFilter.sharedMesh, 0, m_AOBakeMaterial, -1, bakingMatrices.ToArray());
-        m_CommandBuffer.DrawMeshInstanced(m_ContributingMeshes[0].sharedMesh, 0, m_AOBakeMaterial, -1, contributingMatrices.ToArray());
+        m_MeshRenderer.sharedMaterial.SetInt("_RenderTextureSizeX", m_Resolution.x);
+        m_MeshRenderer.sharedMaterial.SetInt("_RenderTextureSizeY", m_Resolution.y);
+        m_MeshRenderer.sharedMaterial.SetInt("_CellSize", m_GridCellRenderSize);
+
+        m_Args[0] = (uint) m_BakeMesh.GetSubMesh(0).vertexCount;
+        m_Args[1] = (uint) m_BakeMesh.vertexCount;
+        m_Args[2] = (uint) m_BakeMesh.GetSubMesh(0).indexStart;
+        m_Args[3] = (uint) m_BakeMesh.GetSubMesh(0).baseVertex;
+        m_ArgsBuffer.SetData(m_Args);
+
+        m_AOBakeMaterial.SetBuffer("_MatrixBuffer", m_BakeMatrixBuffer);
+        m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_ArgsBuffer);
         
+        m_ContributingBakeMaterial.SetBuffer("_MatrixBuffer", m_ContributingMatrixBuffer);
+        m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ArgsBuffer);
         
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
         
@@ -228,8 +249,9 @@ public class MeshAOBaker : MonoBehaviour
         m_TempTransform.transform.position = (m_BakeCamera.transform.position - m_Vertices[index]) - originOffset;
         m_TempTransform.transform.rotation = m_BakeCamera.transform.rotation * Quaternion.Inverse(vertRot);
         m_TempTransform.transform.Translate(originOffset, Space.Self);
-        m_TempTransform.transform.localScale = bakingMeshTransform.transform.localScale;
-        Matrix4x4 transformMatrix = Matrix4x4.TRS(m_TempTransform.position, m_TempTransform.rotation, bakingMeshTransform.lossyScale);
+        Matrix4x4 transformMatrix = Matrix4x4.TRS(m_TempTransform.position, m_TempTransform.rotation, Vector3.one);
+        // Matrix4x4 bakingTransformMatrix = Matrix4x4.TRS(bakingMeshTransform.position, bakingMeshTransform.rotation, bakingMeshTransform.lossyScale);
+        // transformMatrix = transformMatrix * bakingTransformMatrix;
         return transformMatrix;
     }
     

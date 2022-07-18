@@ -291,18 +291,6 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1602979794}
   m_SourcePrefab: {fileID: 100100000, guid: 5809829afd1924c49a20cd4d52ee25e4, type: 3}
---- !u!23 &148107082 stripped
-MeshRenderer:
-  m_CorrespondingSourceObject: {fileID: -7511558181221131132, guid: 5809829afd1924c49a20cd4d52ee25e4,
-    type: 3}
-  m_PrefabInstance: {fileID: 148107081}
-  m_PrefabAsset: {fileID: 0}
---- !u!33 &148107083 stripped
-MeshFilter:
-  m_CorrespondingSourceObject: {fileID: -5754084199372789682, guid: 5809829afd1924c49a20cd4d52ee25e4,
-    type: 3}
-  m_PrefabInstance: {fileID: 148107081}
-  m_PrefabAsset: {fileID: 0}
 --- !u!1 &183058775
 GameObject:
   m_ObjectHideFlags: 0
@@ -772,9 +760,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_BakeCamera: {fileID: 840804875}
   m_GridCellRenderSize: 32
-  m_MeshRenderer: {fileID: 148107082}
-  m_MeshFilter: {fileID: 148107083}
+  m_MeshRenderer: {fileID: 1650806835}
+  m_MeshFilter: {fileID: 1650806836}
   m_AOBakeMaterial: {fileID: 2100000, guid: 5b0e31172456f2f4e9a71fb6db7f168f, type: 2}
+  m_ContributingBakeMaterial: {fileID: 0}
   m_DownsizeComputeShader: {fileID: 7200000, guid: d5bc6ca5e33369448945e85829cb2ca4,
     type: 3}
   m_ContributingMeshes:
@@ -902,9 +891,9 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: e6cafa90cdde5f74087a03f553f4a7fc, type: 2}
-  - {fileID: 2100000, guid: e6cafa90cdde5f74087a03f553f4a7fc, type: 2}
-  - {fileID: 2100000, guid: e6cafa90cdde5f74087a03f553f4a7fc, type: 2}
+  - {fileID: 2100000, guid: cd672c35347199e438f448829f798c3c, type: 2}
+  - {fileID: 2100000, guid: cd672c35347199e438f448829f798c3c, type: 2}
+  - {fileID: 2100000, guid: cd672c35347199e438f448829f798c3c, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1049,6 +1038,18 @@ MeshFilter:
 --- !u!4 &1650806834 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 5809829afd1924c49a20cd4d52ee25e4,
+    type: 3}
+  m_PrefabInstance: {fileID: 148107081}
+  m_PrefabAsset: {fileID: 0}
+--- !u!23 &1650806835 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: -7511558181221131132, guid: 5809829afd1924c49a20cd4d52ee25e4,
+    type: 3}
+  m_PrefabInstance: {fileID: 148107081}
+  m_PrefabAsset: {fileID: 0}
+--- !u!33 &1650806836 stripped
+MeshFilter:
+  m_CorrespondingSourceObject: {fileID: -5754084199372789682, guid: 5809829afd1924c49a20cd4d52ee25e4,
     type: 3}
   m_PrefabInstance: {fileID: 148107081}
   m_PrefabAsset: {fileID: 0}

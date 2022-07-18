@@ -14,6 +14,7 @@ Shader "GeoTetra/MeshAOBaker"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
+            #pragma target 4.5
 
             #include "UnityCG.cginc"
 
@@ -34,7 +35,8 @@ Shader "GeoTetra/MeshAOBaker"
 
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
-            int _CellSize;            
+            int _CellSize;
+            StructuredBuffer<float4x4> _MatrixBuffer;
 
             v2f vert (appdata v, uint instanceID : SV_InstanceID)
             {
@@ -42,7 +44,9 @@ Shader "GeoTetra/MeshAOBaker"
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
                 
-                o.pos = UnityObjectToClipPos(v.vertex);
+                o.pos = mul(_MatrixBuffer[instanceID], v.vertex);
+                // o.pos = mul(o.pos, UNITY_MATRIX_VP);
+                // o.pos = UnityObjectToClipPos(distortedPos);
                 o.scrPos = ComputeNonStereoScreenPos(o.pos);
 
                 int2 resolution = int2(_RenderTextureSizeX, _RenderTextureSizeY);
