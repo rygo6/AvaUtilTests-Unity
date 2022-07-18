@@ -61,6 +61,7 @@ Shader "GeoTetra/MeshAODisplay"
                 rectCenter.y = 1 - rectCenter.y;
 
                 float4 sample = _MainTex.SampleLevel(_point_clamp_Sampler, rectCenter, 0);
+                // float4 sample = _MainTex[gridPos];
                 // float4 sample = tex2Dlod(_MainTex, float4(rectCenter.xy,0,0));
                 o.ao = sample;
                 

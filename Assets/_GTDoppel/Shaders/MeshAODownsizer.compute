@@ -1,0 +1,26 @@
+#pragma kernel Downsize
+
+Texture2D<float4> _InputTexture;
+RWTexture2D<float4> _OutputTexture;
+int _RenderTextureSizeX;            
+int _RenderTextureSizeY;
+int _CellSize;
+
+[numthreads(8,8,1)]
+void Downsize(uint3 id : SV_DispatchThreadID)
+{
+    float4 averagedColor = 0;
+    int averagedCount = 0;
+    int2 start = int2(id.x * _CellSize, id.y * _CellSize);
+    
+    for (int x = 0; x < _CellSize; ++x)
+    {
+        for (int y = 0; y < _CellSize; ++y)
+        {
+            averagedColor += _InputTexture[uint2(start.x + x, start.y + y)];
+            averagedCount++;
+        }
+    }
+
+    _OutputTexture[id.xy] = averagedColor / averagedCount;
+}

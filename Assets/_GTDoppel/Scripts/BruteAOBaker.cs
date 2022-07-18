@@ -3,7 +3,7 @@ using Unity.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class AOComputeBaker : MonoBehaviour
+public class BruteAOBaker : MonoBehaviour
 {
     [SerializeField] 
     MeshFilter m_MeshFilter;

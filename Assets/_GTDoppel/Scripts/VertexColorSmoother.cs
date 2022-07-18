@@ -128,6 +128,8 @@ public class VertexColorSmoother : MonoBehaviour
         for (int submeshIndex = 0; submeshIndex < data.subMeshCount; ++submeshIndex)
         {
             var descriptor = m_Mesh.GetSubMesh(submeshIndex);
+            Debug.Log(descriptor.baseVertex +"  " +descriptor.firstVertex);
+            
             var triangles = new NativeArray<int>(descriptor.indexCount, Allocator.Persistent);
             data.GetIndices(triangles, submeshIndex);
             UnsafeList<int> unsafeTriangles = new UnsafeList<int>(triangles.Length, Allocator.Persistent);
