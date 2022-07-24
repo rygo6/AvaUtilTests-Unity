@@ -85,6 +85,15 @@ public class MeshAOBaker : MonoBehaviour
         int multiple2RoundUp = UpperPowerOfTwo(vertCellScaled);
         Debug.Log("multiple2RoundUp " + multiple2RoundUp);
         m_Resolution = new Vector2Int(multiple2RoundUp, multiple2RoundUp);
+
+        int mipCount = 1;
+        int cellMipSize = m_GridCellRenderSize;
+        while (cellMipSize < multiple2RoundUp)
+        {
+            cellMipSize *= 2;
+            mipCount++;
+        }
+        Debug.Log(mipCount);
         
         m_DownSizeKernel = m_DownsizeComputeShader.FindKernel("Downsize");
         
@@ -99,12 +108,12 @@ public class MeshAOBaker : MonoBehaviour
             useMipMap = false,
             msaaSamples = 8,
         };
-
         m_AOBakeTexture = new RenderTexture(aoDescription)
         {
-            filterMode = FilterMode.Point
+            filterMode = FilterMode.Point,
         };
-        
+        m_AOBakeTexture.Create();
+
         RenderTextureDescriptor downsizeDescription = new RenderTextureDescriptor(
             m_Resolution.x / m_GridCellRenderSize, 
             m_Resolution.y / m_GridCellRenderSize, 
@@ -117,11 +126,11 @@ public class MeshAOBaker : MonoBehaviour
             msaaSamples = 1,
             enableRandomWrite = true
         };
-
         m_DownsizeTexture = new RenderTexture(downsizeDescription)
         {
-            filterMode = FilterMode.Point
+            filterMode = FilterMode.Point,
         };
+        m_DownsizeTexture.Create();
         
         m_MeshRenderer.sharedMaterial.mainTexture = m_DownsizeTexture;
         m_PreviewQuad.sharedMaterial.mainTexture = m_AOBakeTexture;
@@ -180,9 +189,6 @@ public class MeshAOBaker : MonoBehaviour
         return v;
     }
     
-    // List<Matrix4x4> bakingMatrices = new List<Matrix4x4>();
-    // List<Matrix4x4> contributingMatrices = new List<Matrix4x4>();
-
     void Bake()
     {
         m_CommandBuffer.Clear();
@@ -196,13 +202,14 @@ public class MeshAOBaker : MonoBehaviour
         for (int i = 0; i < m_VertLength && i < maxVertCount; ++i)
         {
             Matrix4x4 bakingTransformMatrix = TransformMatrix(m_MeshFilter.transform, i);
-            bakingTransformMatrix = MultiplyCameraMatrix(bakingTransformMatrix);
-            matrixBuffer[i] = bakingTransformMatrix;
+            Matrix4x4 bakingTransformViewMatrix = MultiplyCameraMatrix(bakingTransformMatrix);
+            matrixBuffer[i] = bakingTransformViewMatrix;
             
-            Matrix4x4 contributingTransformMatrix = Matrix4x4.TRS(m_ContributingMeshes[0].transform.position, m_ContributingMeshes[0].transform.rotation, m_ContributingMeshes[0].transform.lossyScale);
+            Matrix4x4 contributingTransformMatrix = Matrix4x4.TRS( m_ContributingMeshes[0].transform.position, m_ContributingMeshes[0].transform.rotation, m_ContributingMeshes[0].transform.lossyScale);
+            contributingTransformMatrix = m_MeshFilter.transform.worldToLocalMatrix * contributingTransformMatrix;
             contributingTransformMatrix = bakingTransformMatrix * contributingTransformMatrix;
-            contributingTransformMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
-            contributingMatrixBuffer[i] = contributingTransformMatrix;
+            Matrix4x4 contributingTransformViewMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
+            contributingMatrixBuffer[i] = contributingTransformViewMatrix;
         }
         m_BakeMatrixBuffer.EndWrite<Matrix4x4>(m_VertLength);
         m_ContributingMatrixBuffer.EndWrite<Matrix4x4>(m_VertLength);
@@ -231,29 +238,151 @@ public class MeshAOBaker : MonoBehaviour
         m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ArgsBuffer);
         
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
-        
+
         m_DownsizeComputeShader.SetInt("_RenderTextureSizeX", m_Resolution.x);
         m_DownsizeComputeShader.SetInt("_RenderTextureSizeY", m_Resolution.y);
         m_DownsizeComputeShader.SetInt("_CellSize", m_GridCellRenderSize);
         m_DownsizeComputeShader.SetTexture(m_DownSizeKernel, "_InputTexture", m_AOBakeTexture);
         m_DownsizeComputeShader.SetTexture(m_DownSizeKernel, "_OutputTexture", m_DownsizeTexture);
-        m_DownsizeComputeShader.Dispatch(m_DownSizeKernel,m_ThreadCount.x, m_ThreadCount.y,1 );
-        
+        m_DownsizeComputeShader.Dispatch(m_DownSizeKernel,m_ThreadCount.x, m_ThreadCount.y,1);
+    }
+    
+    static Quaternion QuaternionLookRotation(Vector3 forward, Vector3 up)
+    {
+        Vector3 vector = Vector3.Normalize(forward);
+        Vector3 vector2 = Vector3.Normalize(Vector3.Cross(up, vector));
+        Vector3 vector3 = Vector3.Cross(vector, vector2);
+        var m00 = vector2.x;
+        var m01 = vector2.y;
+        var m02 = vector2.z;
+        var m10 = vector3.x;
+        var m11 = vector3.y;
+        var m12 = vector3.z;
+        var m20 = vector.x;
+        var m21 = vector.y;
+        var m22 = vector.z;
+
+        float num8 = (m00 + m11) + m22;
+        var quaternion = new Quaternion();
+        if (num8 > 0f)
+        {
+            var num = Mathf.Sqrt(num8 + 1f);
+            quaternion.w = num * 0.5f;
+            num = 0.5f / num;
+            quaternion.x = (m12 - m21) * num;
+            quaternion.y = (m20 - m02) * num;
+            quaternion.z = (m01 - m10) * num;
+            return quaternion;
+        }
+        if ((m00 >= m11) && (m00 >= m22))
+        {
+            var num7 = Mathf.Sqrt(((1f + m00) - m11) - m22);
+            var num4 = 0.5f / num7;
+            quaternion.x = 0.5f * num7;
+            quaternion.y = (m01 + m10) * num4;
+            quaternion.z = (m02 + m20) * num4;
+            quaternion.w = (m12 - m21) * num4;
+            return quaternion;
+        }
+        if (m11 > m22)
+        {
+            var num6 = Mathf.Sqrt(((1f + m11) - m00) - m22);
+            var num3 = 0.5f / num6;
+            quaternion.x = (m10+ m01) * num3;
+            quaternion.y = 0.5f * num6;
+            quaternion.z = (m21 + m12) * num3;
+            quaternion.w = (m20 - m02) * num3;
+            return quaternion; 
+        }
+        var num5 = Mathf.Sqrt(((1f + m22) - m00) - m11);
+        var num2 = 0.5f / num5;
+        quaternion.x = (m20 + m02) * num2;
+        quaternion.y = (m21 + m12) * num2;
+        quaternion.z = 0.5f * num5;
+        quaternion.w = (m01 - m10) * num2;
+        return quaternion;
+    }
+    
+    public static float ConvertDegToRad(float degrees)
+    {
+        return (Mathf.PI / 180) * degrees;
     }
 
+    public static Matrix4x4 GetTranslationMatrix(Vector3 position)
+    {
+        return new Matrix4x4(new Vector4(1, 0, 0, 0),
+                             new Vector4(0, 1, 0, 0),
+                             new Vector4(0, 0, 1, 0),
+                             new Vector4(position.x, position.y, position.z, 1));
+    }
+
+    public static Matrix4x4 GetRotationMatrix(Vector3 anglesDeg)
+    {
+        anglesDeg = new Vector3(ConvertDegToRad(anglesDeg[0]), ConvertDegToRad(anglesDeg[1]), ConvertDegToRad(anglesDeg[2]));
+
+        Matrix4x4 rotationX = new Matrix4x4(new Vector4(1, 0, 0, 0), 
+                                            new Vector4(0, Mathf.Cos(anglesDeg[0]), Mathf.Sin(anglesDeg[0]), 0), 
+                                            new Vector4(0, -Mathf.Sin(anglesDeg[0]), Mathf.Cos(anglesDeg[0]), 0),
+                                            new Vector4(0, 0, 0, 1));
+
+        Matrix4x4 rotationY = new Matrix4x4(new Vector4(Mathf.Cos(anglesDeg[1]), 0, -Mathf.Sin(anglesDeg[1]), 0),
+                                            new Vector4(0, 1, 0, 0),
+                                            new Vector4(Mathf.Sin(anglesDeg[1]), 0, Mathf.Cos(anglesDeg[1]), 0),
+                                            new Vector4(0, 0, 0, 1));
+
+        Matrix4x4 rotationZ = new Matrix4x4(new Vector4(Mathf.Cos(anglesDeg[2]), Mathf.Sin(anglesDeg[2]), 0, 0),
+                                            new Vector4(-Mathf.Sin(anglesDeg[2]), Mathf.Cos(anglesDeg[2]), 0, 0),
+                                            new Vector4(0, 0, 1, 0),
+                                            new Vector4(0, 0, 0, 1));
+
+        return rotationX * rotationY * rotationZ;
+    }
+
+    public static Matrix4x4 GetScaleMatrix(Vector3 scale)
+    {
+        return new Matrix4x4(new Vector4(scale.x, 0, 0, 0),
+                             new Vector4(0, scale.y, 0, 0),
+                             new Vector4(0, 0, scale.z, 0),
+                             new Vector4(0, 0, 0, 1));
+    }
+
+    public static Matrix4x4 Get_TRS_Matrix(Vector3 position, Vector3 rotationAngles, Vector3 scale) 
+    {
+        return GetTranslationMatrix(position) * GetRotationMatrix(rotationAngles) * GetScaleMatrix(scale);
+    }
+    
     Matrix4x4 TransformMatrix(Transform bakingMeshTransform, int index)
     {
-        m_TempTransform.forward = m_Normals[index];
-        Quaternion vertRot = m_TempTransform.rotation;
-        Vector3 originOffset = bakingMeshTransform.position - m_Vertices[index];
-        m_TempTransform.transform.position = (m_BakeCamera.transform.position - m_Vertices[index]) - originOffset;
-        m_TempTransform.transform.rotation = m_BakeCamera.transform.rotation * Quaternion.Inverse(vertRot);
-        m_TempTransform.transform.Translate(originOffset, Space.Self);
-        Matrix4x4 transformMatrix = Matrix4x4.TRS(m_TempTransform.position, m_TempTransform.rotation, Vector3.one);
-        // Matrix4x4 bakingTransformMatrix = Matrix4x4.TRS(bakingMeshTransform.position, bakingMeshTransform.rotation, bakingMeshTransform.lossyScale);
-        // transformMatrix = transformMatrix * bakingTransformMatrix;
+        Vector3 vertNormal = m_Normals[index];
+        Vector3 vertPosition = m_Vertices[index];        
+        // Vector3 vertNormal = bakingMeshTransform.TransformVector(m_Normals[index]);
+        // Vector3 vertPosition = bakingMeshTransform.TransformPoint(m_Vertices[index]);
+        // Vector3 vertNormal = bakingMeshTransform.localToWorldMatrix * m_Normals[index];
+        // Vector3 vertPosition = bakingMeshTransform.localToWorldMatrix * m_Vertices[index];
+        Quaternion vertRot = QuaternionLookRotation(vertNormal, Vector3.up);
+        Quaternion rotation = Quaternion.Inverse(vertRot);
+        Vector3 position = rotation * -vertPosition;
+        Matrix4x4 transformMatrix = Matrix4x4.TRS(position, rotation, Vector3.one);
+        // transformMatrix = bakingMeshTransform.localToWorldMatrix * transformMatrix;
+        
+        // Matrix4x4 transformMatrix = GetTranslationMatrix(position) * Matrix4x4.Rotate(rotation);
         return transformMatrix;
     }
+
+    // Matrix4x4 TransformMatrix(Transform bakingMeshTransform, int index)
+    // {
+    //     Quaternion vertRot = QuaternionLookRotation(m_Normals[index], Vector3.up);
+    
+    //     Vector3 originOffset = bakingMeshTransform.position - m_Vertices[index];
+    
+    //     Vector3 position = (m_BakeCamera.transform.position - m_Vertices[index]) - originOffset;
+    //     Quaternion rotation = m_BakeCamera.transform.rotation * Quaternion.Inverse(vertRot);
+    //     position += rotation * originOffset;
+    
+    //     Matrix4x4 transformMatrix = Matrix4x4.TRS(position, rotation, Vector3.one);
+    //     // Matrix4x4 transformMatrix = GetTranslationMatrix(position) * Matrix4x4.Rotate(rotation);
+    //     return transformMatrix;
+    // }
     
     Matrix4x4 MultiplyCameraMatrix(Matrix4x4 transformMatrix)
     {
