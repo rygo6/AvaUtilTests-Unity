@@ -98,6 +98,11 @@ float4x4 m_scale(float4x4 m, float3 v)
     return m;
 }
 
+float4x4 scale_to_matrix(float3 s)
+{
+    return m_scale(IDENTITY_MATRIX, s);
+}
+
 float4x4 m_translate(float4x4 m, float3 v)
 {
     float x = v.x, y = v.y, z = v.z;

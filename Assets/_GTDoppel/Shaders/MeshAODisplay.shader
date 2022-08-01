@@ -3,6 +3,8 @@ Shader "GeoTetra/MeshAODisplay"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
+        _Multiply ("Multiply", Range(0, 4)) = 1
+        _Bias ("Bias", Range(0, 4)) = 1
     }
     SubShader
     {
@@ -33,7 +35,10 @@ Shader "GeoTetra/MeshAODisplay"
             uniform Texture2D _MainTex;
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
-            int _CellSize;           
+            int _CellSize;
+
+            float _Multiply;
+            float _Bias;
 
             v2f vert (appdata v, uint vertexID: SV_VertexID)
             {
@@ -57,7 +62,10 @@ Shader "GeoTetra/MeshAODisplay"
 
             float4 frag (v2f i) : SV_Target
             {
-                return i.ao;
+                float ao = i.ao;
+                ao *= _Multiply;
+                ao = pow(ao, _Bias);
+                return ao;
             }
             ENDHLSL
         }
