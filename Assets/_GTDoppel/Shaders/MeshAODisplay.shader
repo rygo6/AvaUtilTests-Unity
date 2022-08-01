@@ -14,7 +14,6 @@ Shader "GeoTetra/MeshAODisplay"
             #pragma target 5.0
             #pragma vertex vert
             #pragma fragment frag
-            // #pragma multi_compile_instancing
             
             #include "UnityCG.cginc"
 
@@ -22,7 +21,6 @@ Shader "GeoTetra/MeshAODisplay"
             {
                 float4 vertex : POSITION;
                 float2 uv : TEXCOORD0; 
-                // UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
@@ -30,12 +28,9 @@ Shader "GeoTetra/MeshAODisplay"
                 float4 pos : SV_POSITION;
                 float4 ao : AO;
                 float2 uv : TEXCOORD0; 
-                // UNITY_VERTEX_INPUT_INSTANCE_ID
             };
-
-            // sampler2D _MainTex;
+            
             uniform Texture2D _MainTex;
-            uniform SamplerState _point_clamp_Sampler;
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
             int _CellSize;           
@@ -52,35 +47,16 @@ Shader "GeoTetra/MeshAODisplay"
                 int2 cellSize = int2(_CellSize, _CellSize);
                 int2 gridCount = resolution / cellSize;
                 int2 gridPos = int2(vertexID % gridCount.x, vertexID / gridCount.y);
-                float2 scale = 1.0 / gridCount;
-                float2 rectStep = 2.0 / gridCount;
-                float2 rectHalfStep = 1.0 / gridCount;
-                float2 rectCenterStart = -1 + rectHalfStep;
-                float2 rectCenter = rectCenterStart + rectStep * gridPos;
-                rectCenter = rectCenter * .5 + .5;
-                rectCenter.y = 1 - rectCenter.y;
-
-                float4 sample = _MainTex.SampleLevel(_point_clamp_Sampler, rectCenter, 0);
-                // float4 sample = _MainTex[gridPos];
-                // float4 sample = tex2Dlod(_MainTex, float4(rectCenter.xy,0,0));
+                gridPos.y = gridCount.y - gridPos.y - 1;
+                
+                float4 sample = _MainTex.Load(int3(gridPos, 0));
                 o.ao = sample;
-                
-                // float2 rectUL = rectCenter - rectHalfStep;
-                // float2 rectBR = rectCenter + rectHalfStep;
-
-                
                 
                 return o;
             }
 
             float4 frag (v2f i) : SV_Target
             {
-                UNITY_SETUP_INSTANCE_ID(i);
-
-                // float4 sample = _MainTex.SampleLevel(_point_clamp_Sampler, i.uv, 0);
-                // return sample;
-                
-                // return fixed4(i.ao,i.ao,i.ao,1);
                 return i.ao;
             }
             ENDHLSL

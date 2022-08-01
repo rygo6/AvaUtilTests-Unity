@@ -1,3 +1,11 @@
+// Techically this does the same thing as mipmapping, but
+// in the case of a 8192x8192 texture with 32 cell sizes
+// you couldn't have enough mips to properly downsize it
+// 
+// Also mips on rendertextures require MSAA disabled and
+// 8x msaa on the AObaking texture can probably help improve
+// quality by 8x the samples in the 32x32 cell.
+
 #pragma kernel Downsize
 
 Texture2D<float4> _InputTexture;

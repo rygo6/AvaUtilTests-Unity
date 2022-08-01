@@ -10,43 +10,86 @@ Shader "GeoTetra/MeshAOBaker"
 
         Pass
         {
-            CGPROGRAM
+            HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma target 4.5
+            #pragma shader_feature_local CONTRIBUTING_OBJECT
 
             #include "UnityCG.cginc"
+            #include "Quaternion.hlsl"
+            #include "Matrix.hlsl"
 
             struct appdata
             {
-                float4 vertex : POSITION;
+                float3 vertex : POSITION;
+                float3 normal : NORMAL;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
+                float3 normal : NORMAL;
                 float2 rectUL : RECT0;
                 float2 rectBR : RECT1;
                 float4 scrPos : SCREEN_POSITION;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
-
+            
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
             int _CellSize;
             StructuredBuffer<float4x4> _MatrixBuffer;
+
+            StructuredBuffer<float3> _Vertices;
+            StructuredBuffer<float3> _Normals;
+
+            float4x4 _BakeObject_WorldToLocalMatrix;
+            float4x4 _BakeCamera_WorldToCameraMatrix;
+            float4x4 _BakeCamera_ProjectionMatrix;
+
+            float4x4 _ContributingMatrix;
+
+            float4x4 VertexTransformMatrix(int index)
+            {
+                float3 vertNormal = _Normals[index];
+                float3 vertPosition = _Vertices[index];
+                float4 vertRot = q_look_at(vertNormal, float3(0,1,0));
+                float4 rotation = q_inverse(vertRot);
+                float3 position = rotate_point(rotation, -vertPosition);
+                float4x4 transformMatrix = mul(position_to_matrix(position), quaternion_to_matrix(rotation));
+                return transformMatrix;
+            }
+            
+            float4x4 MultiplyCameraMatrix(float4x4 transformMatrix)
+            {
+                float4x4 compoundMatrix = mul(_BakeCamera_WorldToCameraMatrix, transformMatrix);
+                compoundMatrix = mul(_BakeCamera_ProjectionMatrix, compoundMatrix);
+                return compoundMatrix;
+            }            
 
             v2f vert (appdata v, uint instanceID : SV_InstanceID)
             {
                 v2f o;
                 UNITY_SETUP_INSTANCE_ID(v);
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
+
+                float4x4 bakingVertexMatrix = VertexTransformMatrix(instanceID);
                 
-                o.pos = mul(_MatrixBuffer[instanceID], v.vertex);
-                // o.pos = mul(o.pos, UNITY_MATRIX_VP);
-                // o.pos = UnityObjectToClipPos(distortedPos);
+                #ifndef CONTRIBUTING_OBJECT
+                    float4x4 viewMatrixMatrix = MultiplyCameraMatrix(bakingVertexMatrix);
+                #else
+                    // float4x4 contributingTransformMatrix = unity_ObjectToWorld;
+                    float4x4 contributingTransformMatrix = _ContributingMatrix;
+                    contributingTransformMatrix = mul(_BakeObject_WorldToLocalMatrix, contributingTransformMatrix);
+                    contributingTransformMatrix = mul(bakingVertexMatrix, contributingTransformMatrix);
+                    float4x4 viewMatrixMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
+                #endif
+                
+                
+                o.pos = mul(viewMatrixMatrix, float4(v.vertex, 1));
                 o.scrPos = ComputeNonStereoScreenPos(o.pos);
 
                 int2 resolution = int2(_RenderTextureSizeX, _RenderTextureSizeY);
@@ -68,14 +111,16 @@ Shader "GeoTetra/MeshAOBaker"
                     0, 0, 0, 1
                 };
                 o.pos = mul(translation, o.pos);
+
+                o.normal = v.normal;
                 
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            float4 frag (v2f i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
-
+                
                 const float2 centerUV  = i.scrPos.xy / i.scrPos.w;
                 if (centerUV.x < 0 || centerUV.x > 1 || centerUV.y < 0 || centerUV.y > 1)
                 {
@@ -84,7 +129,7 @@ Shader "GeoTetra/MeshAOBaker"
                 
                 return fixed4(0,0,0,1);
             }
-            ENDCG
+            ENDHLSL
         }
     }
 }
