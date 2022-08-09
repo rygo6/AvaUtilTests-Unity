@@ -3,10 +3,13 @@ Shader "GeoTetra/MeshAOBaker"
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
+        _Offset ("Offset", float) = 0
+        
     }
     SubShader
     {
         Tags { "RenderType"="Opaque" }
+        Cull Off
 
         Pass
         {
@@ -32,38 +35,41 @@ Shader "GeoTetra/MeshAOBaker"
             {
                 float4 pos : SV_POSITION;
                 float3 normal : NORMAL;
-                float2 rectUL : RECT0;
-                float2 rectBR : RECT1;
                 float4 scrPos : SCREEN_POSITION;
-                UNITY_VERTEX_INPUT_INSTANCE_ID
             };
-            
+
+            float _Offset;
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
             int _CellSize;
-            StructuredBuffer<float4x4> _MatrixBuffer;
             StructuredBuffer<float3> _Vertices;
             StructuredBuffer<float3> _Normals;
             float3 _BakeObject_LossyScale;
             float4x4 _BakeObject_WorldToLocalMatrix;
             float4x4 _BakeCamera_WorldToCameraMatrix;
             float4x4 _BakeCamera_ProjectionMatrix;
-
+            float4x4 _FinalRotationMatrix;
             float4x4 _ContributingMatrix;
 
-            inline float4x4 VertexTransformMatrix(int index, bool withScale)
-            {
+            inline float4x4 VertexTransformMatrix(int index)
+            {                
                 float3 vertNormal = _Normals[index];
-                float3 vertPosition = _Vertices[index];
+                float3 vertPosition = _Vertices[index] + _Vertices[index] * (_Normals[index] * _Offset);
                 float4 vertRot = q_look_at(vertNormal, float3(0,1,0));
                 float4 rotation = q_inverse(vertRot);
                 float3 position = rotate_point(rotation, -vertPosition);
-                if (withScale)
-                {
+
+                #ifndef CONTRIBUTING_OBJECT
                     float4x4 transformMatrix = mul(scale_to_matrix(_BakeObject_LossyScale), position_to_matrix(position));
-                    return mul(transformMatrix, quaternion_to_matrix(rotation));
-                }
-                return mul(position_to_matrix(position), quaternion_to_matrix(rotation));
+                    transformMatrix = mul(transformMatrix, quaternion_to_matrix(rotation));
+                    transformMatrix = mul(transformMatrix, _FinalRotationMatrix);
+                    return transformMatrix;
+                #else
+                    // scale will get applied via the _BakeObject_WorldToLocalMatrix so don't do it twice!
+                    float4x4 transformMatrix = mul(position_to_matrix(position), quaternion_to_matrix(rotation));
+                    transformMatrix = mul(transformMatrix, _FinalRotationMatrix);
+                    return transformMatrix;
+                #endif
             }
             
             inline float4x4 MultiplyCameraMatrix(float4x4 transformMatrix)
@@ -77,14 +83,13 @@ Shader "GeoTetra/MeshAOBaker"
             {
                 v2f o;
                 UNITY_SETUP_INSTANCE_ID(v);
-                UNITY_TRANSFER_INSTANCE_ID(v, o);
                 
                 #ifndef CONTRIBUTING_OBJECT
-                    float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID, true);
+                    float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID);
                     float4x4 viewProjectionMatrix = MultiplyCameraMatrix(bakingVertexViewMatrix);
                 #else
                     // scale will get applied via the _BakeObject_WorldToLocalMatrix so don't do it twice!
-                    float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID, false);
+                    float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID);
                     // float4x4 contributingTransformMatrix = unity_ObjectToWorld;
                     float4x4 contributingTransformMatrix = _ContributingMatrix;
                     contributingTransformMatrix = mul(_BakeObject_WorldToLocalMatrix, contributingTransformMatrix);
@@ -104,8 +109,6 @@ Shader "GeoTetra/MeshAOBaker"
                 float2 rectHalfStep = 1.0 / gridCount;
                 float2 rectCenterStart = -1 + rectHalfStep;
                 float2 rectCenter = rectCenterStart + rectStep * gridPos;
-                o.rectUL = rectCenter - rectHalfStep;
-                o.rectBR = rectCenter + rectHalfStep;
                 
                 float4x4 translation = {
                     scale.x, 0, 0, rectCenter.x,
@@ -121,9 +124,7 @@ Shader "GeoTetra/MeshAOBaker"
             }
 
             float4 frag (v2f i) : SV_Target
-            {
-                UNITY_SETUP_INSTANCE_ID(i);
-                
+            {                
                 const float2 centerUV  = i.scrPos.xy / i.scrPos.w;
                 if (centerUV.x < 0 || centerUV.x > 1 || centerUV.y < 0 || centerUV.y > 1)
                 {

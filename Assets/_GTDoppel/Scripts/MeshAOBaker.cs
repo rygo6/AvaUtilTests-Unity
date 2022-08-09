@@ -34,6 +34,9 @@ public class MeshAOBaker : MonoBehaviour
 
     [SerializeField] 
     MeshRenderer m_PreviewQuad;
+    
+    [SerializeField] 
+    Vector3 m_FinalRotationTest;
 
     readonly Matrix4x4 m_LookMatrix = Matrix4x4.TRS(new Vector3(0, 0, 0), Quaternion.identity, Vector3.one);
     readonly Matrix4x4 m_OrthoMatrix = Matrix4x4.Ortho(-1, 1, -1, 1, 0.01f, 2);
@@ -53,12 +56,14 @@ public class MeshAOBaker : MonoBehaviour
 
     int m_DownSizeKernel;
     
-    ComputeBuffer m_ArgsBuffer;
+    ComputeBuffer m_BakeArgsBuffer;
+    ComputeBuffer m_ContributingArgsBuffer;
     ComputeBuffer m_BakeMatrixBuffer;
     ComputeBuffer m_ContributingMatrixBuffer;
     ComputeBuffer m_VerticesBuffer;
     ComputeBuffer m_NormalsBuffer;
-    uint[] m_Args = new uint[5] { 0, 0, 0, 0, 0 };
+    uint[] m_BakeArgs = new uint[5] { 0, 0, 0, 0, 0 };
+    uint[] m_ContributingArgs = new uint[5] { 0, 0, 0, 0, 0 };
 
     void Start()
     {
@@ -83,15 +88,6 @@ public class MeshAOBaker : MonoBehaviour
         int multiple2RoundUp = UpperPowerOfTwo(vertCellScaled);
         Debug.Log("multiple2RoundUp " + multiple2RoundUp);
         m_Resolution = new Vector2Int(multiple2RoundUp, multiple2RoundUp);
-
-        int mipCount = 1;
-        int cellMipSize = m_GridCellRenderSize;
-        while (cellMipSize < multiple2RoundUp)
-        {
-            cellMipSize *= 2;
-            mipCount++;
-        }
-        Debug.Log(mipCount);
         
         m_DownSizeKernel = m_DownsizeComputeShader.FindKernel("Downsize");
         
@@ -136,11 +132,14 @@ public class MeshAOBaker : MonoBehaviour
         const int threadCount = 8;
         m_ThreadCount.x = m_Resolution.x / m_GridCellRenderSize / threadCount;
         m_ThreadCount.y = m_Resolution.y / m_GridCellRenderSize / threadCount;
+        m_ThreadCount.x = m_ThreadCount.x < 1 ? 1 : m_ThreadCount.x;
+        m_ThreadCount.y = m_ThreadCount.y < 1 ? 1 : m_ThreadCount.y;
         Debug.Log(m_ThreadCount.x + " " + m_ThreadCount.y);
         
         m_BakeMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         m_ContributingMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
-        m_ArgsBuffer = new ComputeBuffer(1, m_Args.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
+        m_BakeArgsBuffer = new ComputeBuffer(1, m_BakeArgs.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
+        m_ContributingArgsBuffer = new ComputeBuffer(1, m_ContributingArgs.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
         m_VerticesBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         m_NormalsBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         
@@ -151,7 +150,8 @@ public class MeshAOBaker : MonoBehaviour
     {
         m_Vertices.Dispose();
         m_Normals.Dispose();
-        m_ArgsBuffer.Dispose();
+        m_BakeArgsBuffer.Dispose();
+        m_ContributingArgsBuffer.Dispose();
         m_BakeMatrixBuffer.Dispose();
         m_ContributingMatrixBuffer.Dispose();
     }
@@ -183,28 +183,28 @@ public class MeshAOBaker : MonoBehaviour
         m_CommandBuffer.Clear();
         m_CommandBuffer.SetRenderTarget(m_AOBakeTexture);
         m_CommandBuffer.ClearRenderTarget(true, true, Color.white);
-        
+
         m_AOBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
         m_AOBakeMaterial.SetVector("_BakeObject_LossyScale", m_MeshFilter.transform.lossyScale);
         m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
         m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
+        m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(Quaternion.Euler(m_FinalRotationTest)));
         
         m_ContributingBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
         m_ContributingBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
         m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
         m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
+        m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(Quaternion.Euler(m_FinalRotationTest)));
 
         // for (int i = 0; i < m_BakeMesh.subMeshCount; ++i) 
         // {
-            m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_ArgsBuffer);
-            
-            
-            m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ArgsBuffer);
+            m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_BakeArgsBuffer);
+            m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
         // }
 
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
-        
-        m_DownsizeComputeShader.Dispatch(m_DownSizeKernel,m_ThreadCount.x, m_ThreadCount.y,1);
+
+        m_DownsizeComputeShader.Dispatch(m_DownSizeKernel, m_ThreadCount.x, m_ThreadCount.y,1);
     }
 
     void SetProperties()
@@ -237,12 +237,20 @@ public class MeshAOBaker : MonoBehaviour
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeX", m_Resolution.x);
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_MeshRenderer.sharedMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
+
+        int instanceCount = m_BakeMesh.vertexCount;
         
-        m_Args[0] = (uint) m_BakeMesh.GetSubMesh(0).vertexCount;
-        m_Args[1] = (uint) m_BakeMesh.vertexCount;
-        m_Args[2] = (uint) m_BakeMesh.GetSubMesh(0).indexStart;
-        m_Args[3] = (uint) m_BakeMesh.GetSubMesh(0).baseVertex;
-        m_ArgsBuffer.SetData(m_Args);
+        m_BakeArgs[0] = (uint) m_BakeMesh.GetSubMesh(0).indexCount;
+        m_BakeArgs[1] = (uint) instanceCount;
+        m_BakeArgs[2] = (uint) m_BakeMesh.GetSubMesh(0).indexStart;
+        m_BakeArgs[3] = (uint) m_BakeMesh.GetSubMesh(0).baseVertex;
+        m_BakeArgsBuffer.SetData(m_BakeArgs);
+        
+        m_ContributingArgs[0] = (uint) m_ContributingMeshes[0].sharedMesh.GetSubMesh(0).indexCount;
+        m_ContributingArgs[1] = (uint) instanceCount;
+        m_ContributingArgs[2] = (uint) m_ContributingMeshes[0].sharedMesh.GetSubMesh(0).indexStart;
+        m_ContributingArgs[3] = (uint) m_ContributingMeshes[0].sharedMesh.GetSubMesh(0).baseVertex;
+        m_ContributingArgsBuffer.SetData(m_ContributingArgs);
         
         m_DownsizeComputeShader.SetInt("_RenderTextureSizeX", m_Resolution.x);
         m_DownsizeComputeShader.SetInt("_RenderTextureSizeY", m_Resolution.y);
