@@ -9,6 +9,7 @@ Shader "GeoTetra/MeshAODisplay"
     SubShader
     {
         Tags { "RenderType"="Opaque" }
+        Cull Off
 
         Pass
         {

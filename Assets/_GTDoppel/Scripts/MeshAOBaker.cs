@@ -4,22 +4,15 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
-using UnityEngine.Serialization;
 
 public class MeshAOBaker : MonoBehaviour
 {
-    [SerializeField] 
-    Camera m_BakeCamera;
-
     [SerializeField] 
     int m_GridCellRenderSize = 32;
 
     [SerializeField] 
     MeshRenderer m_MeshRenderer;
 
-    [SerializeField] 
-    MeshFilter m_MeshFilter;
-    
     [SerializeField] 
     Material m_AOBakeMaterial;
     
@@ -34,13 +27,40 @@ public class MeshAOBaker : MonoBehaviour
 
     [SerializeField] 
     MeshRenderer m_PreviewQuad;
+
+    [SerializeField] 
+    float m_EdgeClip = .5f;
     
     [SerializeField] 
     Vector3 m_FinalRotationTest;
+    
+    [SerializeField] 
+    Vector4 m_FinalClippingsTest = new Vector4(0, 1, 0, 1);
 
-    readonly Matrix4x4 m_LookMatrix = Matrix4x4.TRS(new Vector3(0, 0, 0), Quaternion.identity, Vector3.one);
+    [SerializeField] 
+    int m_FinalTestIndex;
+
+    readonly Matrix4x4 m_LookMatrix = Matrix4x4.TRS(new Vector3(0, 0, 0), Quaternion.identity, new Vector3(1, 1, -1));
     readonly Matrix4x4 m_OrthoMatrix = Matrix4x4.Ortho(-1, 1, -1, 1, 0.01f, 2);
+    readonly Matrix4x4 m_PerspMatrix = Matrix4x4.Perspective(90, 1, .000001f, 100);
     Matrix4x4 m_TransformTRS;
+
+    Matrix4x4[] m_DirectionalMatrices = { 
+        Matrix4x4.Rotate(Quaternion.Euler(0, 0, 0)),
+        Matrix4x4.Rotate(Quaternion.Euler(90, 0, 0)),
+        Matrix4x4.Rotate(Quaternion.Euler(-90, 0, 0)),
+        Matrix4x4.Rotate(Quaternion.Euler(0, 90, 0)),
+        Matrix4x4.Rotate(Quaternion.Euler(0, -90, 0))
+    };
+    
+    Vector4[] m_DirectionalClippings = { 
+        new Vector4(0, 1, 0, 1),
+        new Vector4(0, 1, 0, .5f),
+        new Vector4(0, 1, .5f, 1),
+        new Vector4(.5f, 1, 0, 1),
+        new Vector4(0, .5f, 0, 1),
+    };
+    
     Texture2D m_Texture2D;
     int m_VertLength;
     
@@ -51,6 +71,7 @@ public class MeshAOBaker : MonoBehaviour
     Mesh m_BakeMesh;
     NativeArray<Vector3> m_Vertices;
     NativeArray<Vector3> m_Normals;
+    NativeArray<Vector4> m_Tangents;
     Vector2Int m_Resolution;
     Vector2Int m_ThreadCount;
 
@@ -62,26 +83,30 @@ public class MeshAOBaker : MonoBehaviour
     ComputeBuffer m_ContributingMatrixBuffer;
     ComputeBuffer m_VerticesBuffer;
     ComputeBuffer m_NormalsBuffer;
+    ComputeBuffer m_TangentsBuffer;
     uint[] m_BakeArgs = new uint[5] { 0, 0, 0, 0, 0 };
     uint[] m_ContributingArgs = new uint[5] { 0, 0, 0, 0, 0 };
+    
+    MeshFilter m_MeshFilter;
 
     void Start()
     {
+        m_MeshFilter = m_MeshRenderer.GetComponent<MeshFilter>();
+        m_BakeMesh = m_MeshFilter.sharedMesh;
+        
         m_ContributingBakeMaterial = Instantiate(m_AOBakeMaterial);
 
         m_CommandBuffer = new CommandBuffer();
         m_CommandBuffer.name = "MeshAOBaker";
 
-        m_BakeMesh = m_MeshFilter.sharedMesh;
-
-        m_Vertices = new NativeArray<Vector3>(m_BakeMesh.vertices, Allocator.Persistent);
         m_VertLength = m_BakeMesh.vertexCount;
-
+        m_Vertices = new NativeArray<Vector3>(m_BakeMesh.vertices, Allocator.Persistent);
         m_Normals = new NativeArray<Vector3>(m_BakeMesh.normals, Allocator.Persistent);
+        m_Tangents = new NativeArray<Vector4>(m_BakeMesh.tangents, Allocator.Persistent);
         
 
         Debug.Log("m_VertLength " + m_VertLength);
-        int vertSqrRoot = Mathf.FloorToInt(Mathf.Sqrt(m_VertLength));
+        int vertSqrRoot = Mathf.CeilToInt(Mathf.Sqrt(m_VertLength));
         Debug.Log("vertSqrRoot " + vertSqrRoot);
         int vertCellScaled = vertSqrRoot * m_GridCellRenderSize;
         Debug.Log("vertCellScaled " + vertCellScaled);
@@ -142,6 +167,7 @@ public class MeshAOBaker : MonoBehaviour
         m_ContributingArgsBuffer = new ComputeBuffer(1, m_ContributingArgs.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
         m_VerticesBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         m_NormalsBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
+        m_TangentsBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 4 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         
         SetProperties();
     }
@@ -150,10 +176,14 @@ public class MeshAOBaker : MonoBehaviour
     {
         m_Vertices.Dispose();
         m_Normals.Dispose();
-        m_BakeArgsBuffer.Dispose();
-        m_ContributingArgsBuffer.Dispose();
+        m_Tangents.Dispose();
         m_BakeMatrixBuffer.Dispose();
         m_ContributingMatrixBuffer.Dispose();
+        m_BakeArgsBuffer.Dispose();
+        m_ContributingArgsBuffer.Dispose();
+        m_VerticesBuffer.Dispose();
+        m_NormalsBuffer.Dispose();
+        m_TangentsBuffer.Dispose();
     }
 
     void Update()
@@ -177,63 +207,101 @@ public class MeshAOBaker : MonoBehaviour
         v++;
         return v;
     }
+
+    int m_CurrentDirectionalindex = 0;
     
     void Bake()
     {
         m_CommandBuffer.Clear();
         m_CommandBuffer.SetRenderTarget(m_AOBakeTexture);
-        m_CommandBuffer.ClearRenderTarget(true, true, Color.white);
+
+        // if (m_CurrentDirectionalindex == 0)
+        // {
+            m_CommandBuffer.ClearRenderTarget(true, true, Color.white);
+
+            m_DirectionalClippings[1] = new Vector4(0, 1, 0, 1f - m_EdgeClip);
+            m_DirectionalClippings[2] = new Vector4(0, 1, m_EdgeClip, 1);
+            m_DirectionalClippings[3] = new Vector4(m_EdgeClip, 1, 0, 1);
+            m_DirectionalClippings[4] = new Vector4(0, 1f - m_EdgeClip, 0, 1);
+        // }
+
+        Quaternion finalRotation = Quaternion.Euler(m_FinalRotationTest);
+        Vector4 finalRotVec = new Vector4(finalRotation.x, finalRotation.y, finalRotation.z, finalRotation.w);
 
         m_AOBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
         m_AOBakeMaterial.SetVector("_BakeObject_LossyScale", m_MeshFilter.transform.lossyScale);
-        m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
-        m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
-        m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(Quaternion.Euler(m_FinalRotationTest)));
+        m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
+        m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
+        // m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_FinalTestIndex]);
+        // m_AOBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_FinalTestIndex]);
+        m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
+        m_AOBakeMaterial.SetVector("_FinalRotation", finalRotVec);
+        m_AOBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
         
         m_ContributingBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
         m_ContributingBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
-        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
-        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
-        m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(Quaternion.Euler(m_FinalRotationTest)));
+        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
+        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
+        // m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_FinalTestIndex]);
+        // m_ContributingBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_FinalTestIndex]);       
+        m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
+        m_ContributingBakeMaterial.SetVector("_FinalRotation", finalRotVec);
+        m_ContributingBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
 
-        // for (int i = 0; i < m_BakeMesh.subMeshCount; ++i) 
-        // {
-            m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_BakeArgsBuffer);
-            m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
-        // }
-
+        
+        m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_BakeArgsBuffer);
+        m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
+        
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
 
-        m_DownsizeComputeShader.Dispatch(m_DownSizeKernel, m_ThreadCount.x, m_ThreadCount.y,1);
+        // m_CurrentDirectionalindex++;
+        // if (m_CurrentDirectionalindex == m_DirectionalMatrices.Length)
+        // {
+        //     m_CurrentDirectionalindex = 0;
+            m_DownsizeComputeShader.Dispatch(m_DownSizeKernel, m_ThreadCount.x, m_ThreadCount.y,1);
+        // }
     }
+    
+    
+    // Matrix4x4 startPos = Matrix4x4.Translate(m_StartTransform.position);
+    // Matrix4x4 startRot = Matrix4x4.Rotate(m_StartTransform.rotation);
+    // startRot = startRot * finalRotationMatrix;
+    // Matrix4x4 starScale = Matrix4x4.Scale(m_StartTransform.lossyScale);
+    //     
+    // m_TestTransform.position = startPos.ExtractPosition();
+    // m_TestTransform.rotation = startRot.ExtractRotation();
+    // m_TestTransform.localScale = starScale.ExtractScale();
 
     void SetProperties()
     {
         m_VerticesBuffer.SetData(m_Vertices);
         m_NormalsBuffer.SetData(m_Normals);
+        m_TangentsBuffer.SetData(m_Tangents);
         
         m_AOBakeMaterial.DisableKeyword("CONTRIBUTING_OBJECT");
         m_AOBakeMaterial.SetBuffer("_Vertices", m_VerticesBuffer);
         m_AOBakeMaterial.SetBuffer("_Normals", m_NormalsBuffer);
+        m_AOBakeMaterial.SetBuffer("_Tangents", m_TangentsBuffer);
         m_AOBakeMaterial.SetFloat("_RenderTextureSizeX", m_Resolution.x);
         m_AOBakeMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_AOBakeMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
-        m_AOBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
-        m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
-        m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
+        // m_AOBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
+        // m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
+        // m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
 
         m_ContributingBakeMaterial.EnableKeyword("CONTRIBUTING_OBJECT");
         m_ContributingBakeMaterial.SetBuffer("_Vertices", m_VerticesBuffer);
         m_ContributingBakeMaterial.SetBuffer("_Normals", m_NormalsBuffer);
+        m_ContributingBakeMaterial.SetBuffer("_Tangents", m_TangentsBuffer);
         m_ContributingBakeMaterial.SetFloat("_RenderTextureSizeX", m_Resolution.x);
         m_ContributingBakeMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_ContributingBakeMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
-        m_ContributingBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
-        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_BakeCamera.worldToCameraMatrix);
-        m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_BakeCamera.projectionMatrix);
-
-        m_ContributingBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
-        
+        // m_ContributingBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
+        // m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
+        // m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
+        //
+        // m_ContributingBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
+        //
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeX", m_Resolution.x);
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_MeshRenderer.sharedMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
@@ -461,12 +529,12 @@ public class MeshAOBaker : MonoBehaviour
         return transformMatrix;
     }
     
-    Matrix4x4 MultiplyCameraMatrix(Matrix4x4 transformMatrix)
-    {
-        Matrix4x4 compoundMatrix = m_BakeCamera.worldToCameraMatrix * transformMatrix;
-        compoundMatrix = m_BakeCamera.projectionMatrix * compoundMatrix;
-        return compoundMatrix;
-    }
+    // Matrix4x4 MultiplyCameraMatrix(Matrix4x4 transformMatrix)
+    // {
+    //     Matrix4x4 compoundMatrix = m_BakeCamera.worldToCameraMatrix * transformMatrix;
+    //     compoundMatrix = m_BakeCamera.projectionMatrix * compoundMatrix;
+    //     return compoundMatrix;
+    // }
 }
 
 public static class MatrixExtensions
