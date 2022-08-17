@@ -55,8 +55,8 @@ public class MeshAOBaker : MonoBehaviour
     
     Vector4[] m_DirectionalClippings = { 
         new Vector4(0, 1, 0, 1),
-        new Vector4(0, 1, 0, .5f),
         new Vector4(0, 1, .5f, 1),
+        new Vector4(0, 1, 0, .5f),
         new Vector4(.5f, 1, 0, 1),
         new Vector4(0, .5f, 0, 1),
     };
@@ -193,7 +193,7 @@ public class MeshAOBaker : MonoBehaviour
             Bake();
         }
 
-        Bake();
+        // Bake();
     }
 
     int UpperPowerOfTwo(int v)
@@ -215,51 +215,54 @@ public class MeshAOBaker : MonoBehaviour
         m_CommandBuffer.Clear();
         m_CommandBuffer.SetRenderTarget(m_AOBakeTexture);
 
-        // if (m_CurrentDirectionalindex == 0)
-        // {
+        if (m_CurrentDirectionalindex == 0)
+        {
             m_CommandBuffer.ClearRenderTarget(true, true, Color.white);
 
-            m_DirectionalClippings[1] = new Vector4(0, 1, 0, 1f - m_EdgeClip);
-            m_DirectionalClippings[2] = new Vector4(0, 1, m_EdgeClip, 1);
+            m_DirectionalClippings[1] = new Vector4(0, 1, m_EdgeClip, 1f);
+            m_DirectionalClippings[2] = new Vector4(0, 1, 0, 1f - m_EdgeClip);
             m_DirectionalClippings[3] = new Vector4(m_EdgeClip, 1, 0, 1);
             m_DirectionalClippings[4] = new Vector4(0, 1f - m_EdgeClip, 0, 1);
-        // }
+        }
 
-        Quaternion finalRotation = Quaternion.Euler(m_FinalRotationTest);
-        Vector4 finalRotVec = new Vector4(finalRotation.x, finalRotation.y, finalRotation.z, finalRotation.w);
+        // Quaternion finalRotation = Quaternion.Euler(m_FinalRotationTest);
+        // Vector4 finalRotVec = new Vector4(finalRotation.x, finalRotation.y, finalRotation.z, finalRotation.w);
 
         m_AOBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
+        m_AOBakeMaterial.SetMatrix("_BakeObject_LocalToWorldMatrix", m_MeshFilter.GetComponent<Renderer>().localToWorldMatrix);
         m_AOBakeMaterial.SetVector("_BakeObject_LossyScale", m_MeshFilter.transform.lossyScale);
+        m_AOBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
         m_AOBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
         m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
-        // m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_FinalTestIndex]);
-        // m_AOBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_FinalTestIndex]);
-        m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
-        m_AOBakeMaterial.SetVector("_FinalRotation", finalRotVec);
-        m_AOBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
+        m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_CurrentDirectionalindex]);
+        m_AOBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_CurrentDirectionalindex]);
+        // m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
+        // m_AOBakeMaterial.SetVector("_FinalRotation", finalRotVec);
+        // m_AOBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
         
         m_ContributingBakeMaterial.SetMatrix("_BakeObject_WorldToLocalMatrix", m_MeshFilter.GetComponent<Renderer>().worldToLocalMatrix);
+        m_ContributingBakeMaterial.SetMatrix("_BakeObject_LocalToWorldMatrix", m_MeshFilter.GetComponent<Renderer>().localToWorldMatrix);
+        m_ContributingBakeMaterial.SetVector("_BakeObject_LossyScale", m_MeshFilter.transform.lossyScale);
         m_ContributingBakeMaterial.SetMatrix("_ContributingMatrix", m_ContributingMeshes[0].GetComponent<Renderer>().localToWorldMatrix);
         m_ContributingBakeMaterial.SetMatrix("_BakeCamera_WorldToCameraMatrix", m_LookMatrix);
         m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
-        // m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_FinalTestIndex]);
-        // m_ContributingBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_FinalTestIndex]);       
-        m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
-        m_ContributingBakeMaterial.SetVector("_FinalRotation", finalRotVec);
-        m_ContributingBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
+        m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_CurrentDirectionalindex]);
+        m_ContributingBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_CurrentDirectionalindex]);       
+        // m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
+        // m_ContributingBakeMaterial.SetVector("_FinalRotation", finalRotVec);
+        // m_ContributingBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
 
-        
         m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_BakeArgsBuffer);
         m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
         
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
 
-        // m_CurrentDirectionalindex++;
-        // if (m_CurrentDirectionalindex == m_DirectionalMatrices.Length)
-        // {
-        //     m_CurrentDirectionalindex = 0;
+        m_CurrentDirectionalindex++;
+        if (m_CurrentDirectionalindex == m_DirectionalMatrices.Length)
+        {
+            m_CurrentDirectionalindex = 0;
             m_DownsizeComputeShader.Dispatch(m_DownSizeKernel, m_ThreadCount.x, m_ThreadCount.y,1);
-        // }
+        }
     }
     
     

@@ -117,6 +117,32 @@ float4x4 position_to_matrix(float3 p)
     return m_translate(IDENTITY_MATRIX, p);
 }
 
+// not work?
+float4x4 m_rotate(float4x4 m, float4 quat)
+{
+    float x = quat.x, y = quat.y, z = quat.z, w = quat.w;
+    float x2 = x + x, y2 = y + y, z2 = z + z;
+    float xx = x * x2, xy = x * y2, xz = x * z2;
+    float yy = y * y2, yz = y * z2, zz = z * z2;
+    float wx = w * x2, wy = w * y2, wz = w * z2;
+
+    m[0][0] = 1.0 - (yy + zz);
+    m[0][1] = xy - wz;
+    m[0][2] = xz + wy;
+
+    m[1][0] = xy + wz;
+    m[1][1] = 1.0 - (xx + zz);
+    m[1][2] = yz - wx;
+
+    m[2][0] = xz - wy;
+    m[2][1] = yz + wx;
+    m[2][2] = 1.0 - (xx + yy);
+
+    m[3][3] = 1.0;
+
+    return m;
+}
+
 float4x4 compose(float3 position, float4 quat, float3 scale)
 {
     float4x4 m = quaternion_to_matrix(quat);

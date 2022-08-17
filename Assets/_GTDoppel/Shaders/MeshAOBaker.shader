@@ -8,7 +8,7 @@ Shader "GeoTetra/MeshAOBaker"
     SubShader
     {
         Tags { "RenderType"="Opaque" }
-//        Blend One OneMinusSrcAlpha
+        Blend One OneMinusSrcAlpha
         Cull Off
 
         Pass
@@ -47,6 +47,7 @@ Shader "GeoTetra/MeshAOBaker"
             StructuredBuffer<float4> _Tangents;
             float3 _BakeObject_LossyScale;
             float4x4 _BakeObject_WorldToLocalMatrix;
+            float4x4 _BakeObject_LocalToWorldMatrix;
             float4x4 _BakeCamera_WorldToCameraMatrix;
             float4x4 _BakeCamera_ProjectionMatrix;
             float4x4 _FinalRotationMatrix;
@@ -58,27 +59,32 @@ Shader "GeoTetra/MeshAOBaker"
             {                
                 float3 vertNormal = _Normals[index];
                 float3 vertPosition = _Vertices[index];
-                float3 tangent = _Tangents[index].xyz * _Tangents[index].w;
-                float4 vertRot = q_look_at(vertNormal, tangent);
-                float4 rotation = q_inverse(vertRot);
-                float4x4 rotationMatrix = quaternion_to_matrix(rotation);
-                rotationMatrix = mul(rotationMatrix, _FinalRotationMatrix);
-                float3 position = rotate_point(rotation, -vertPosition);
-                float4x4 positionMatrix = position_to_matrix(position);
+                float3 vertOriginOffset = float3(0, 0, 0) - vertPosition; // essentially -vertPosition but typing it out to remember
+                float3 vertTangent = _Tangents[index].xyz * _Tangents[index].w;
+                float4 vertRot = q_look_at(vertNormal, vertTangent);
+                
+                float4 bakeRot = q_inverse(vertRot);
+                float4x4 bakeRotMatrix = quaternion_to_matrix(bakeRot);
+                
+                float3 bakePos = vertOriginOffset;
+                float4x4 bakePosMatrix = position_to_matrix(bakePos);
+                
+                float4x4 scaleMatrix = scale_to_matrix(_BakeObject_LossyScale);
                 
                 #ifndef CONTRIBUTING_OBJECT
-                    float4x4 transformMatrix = mul(scale_to_matrix(_BakeObject_LossyScale), positionMatrix);
-                    transformMatrix = mul(transformMatrix, rotationMatrix);
+                    float4x4 transformMatrix = bakePosMatrix;
+                    transformMatrix = mul(bakeRotMatrix, transformMatrix);
+                    transformMatrix = mul(_FinalRotationMatrix, transformMatrix);
+                    transformMatrix = mul(scaleMatrix, transformMatrix);
                     return transformMatrix;
-
-                    // float4x4 transformMatrix = m_scale(rotationMatrix, _BakeObject_LossyScale);
-                    // transformMatrix = m_translate(transformMatrix, position);
-                    // return transformMatrix;
-
                 #else // Contributing Object
-                    // scale will get applied via the _BakeObject_WorldToLocalMatrix so don't do it twice!
-                    // float4x4 transformMatrix = mul(positionMatrix, rotationMatrix);
-                    float4x4 transformMatrix = m_translate(rotationMatrix, position);
+                    // move to vert
+                    float4x4 transformMatrix = bakePosMatrix;
+                    // rotate to proper direction
+                    transformMatrix = mul(bakeRotMatrix, transformMatrix);
+                    transformMatrix = mul(_FinalRotationMatrix, transformMatrix);
+                    // don't scale?
+                    // transformMatrix = mul(scaleMatrix, transformMatrix);
                     return transformMatrix;
                 #endif
             }
@@ -99,11 +105,16 @@ Shader "GeoTetra/MeshAOBaker"
                     float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID);
                     float4x4 viewProjectionMatrix = MultiplyCameraMatrix(bakingVertexViewMatrix);
                 #else // Contributing Object
-                    // scale will get applied via the _BakeObject_WorldToLocalMatrix so don't do it twice!
                     float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID);
                     float4x4 contributingTransformMatrix = _ContributingMatrix;
+
+                    // transform contributing matrix to local space of baking matrix
                     contributingTransformMatrix = mul(_BakeObject_WorldToLocalMatrix, contributingTransformMatrix);
+
+                    // apply bakingVertexViewMatrix within that local space of baking matrix
                     contributingTransformMatrix = mul(bakingVertexViewMatrix, contributingTransformMatrix);
+
+                    // apply camera projection
                     float4x4 viewProjectionMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
                 #endif
                 
@@ -141,7 +152,8 @@ Shader "GeoTetra/MeshAOBaker"
                     discard;
                 }
                 
-                return fixed4(0, 0, 0, 1.0);
+                // return float4(i.pos.w, i.pos.w, i.pos.w, 1.0);
+                return float4(0,0,0, .2);
             }
             ENDHLSL
         }
