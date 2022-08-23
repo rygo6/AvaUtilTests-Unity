@@ -93,6 +93,13 @@ public class MeshAOBaker : MonoBehaviour
     {
         m_MeshFilter = m_MeshRenderer.GetComponent<MeshFilter>();
         m_BakeMesh = m_MeshFilter.sharedMesh;
+
+        foreach (var attribute in m_BakeMesh.GetVertexAttributes())
+        {
+            Debug.Log($"{attribute.attribute} {attribute.dimension} {attribute.format} {attribute.stream}");
+        }
+        
+        Debug.Log($"Steam 0 stride {m_BakeMesh.GetVertexBufferStride(0)}");
         
         m_ContributingBakeMaterial = Instantiate(m_AOBakeMaterial);
 
@@ -193,7 +200,7 @@ public class MeshAOBaker : MonoBehaviour
             Bake();
         }
 
-        // Bake();
+        Bake();
     }
 
     int UpperPowerOfTwo(int v)
@@ -309,7 +316,9 @@ public class MeshAOBaker : MonoBehaviour
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_MeshRenderer.sharedMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
 
-        int instanceCount = m_BakeMesh.vertexCount;
+        // int instanceCount = m_BakeMesh.vertexCount;
+        int instanceCount = 1023;
+        Debug.Log($"Baking Instance Count: {instanceCount}");
         
         m_BakeArgs[0] = (uint) m_BakeMesh.GetSubMesh(0).indexCount;
         m_BakeArgs[1] = (uint) instanceCount;

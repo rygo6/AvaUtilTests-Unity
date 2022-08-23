@@ -153,7 +153,7 @@ Shader "GeoTetra/MeshAOBaker"
                 }
                 
                 // return float4(i.pos.w, i.pos.w, i.pos.w, 1.0);
-                return float4(0,0,0, .2);
+                return float4(0,0,0,1);
             }
             ENDHLSL
         }
