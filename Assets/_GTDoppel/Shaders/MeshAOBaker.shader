@@ -8,7 +8,7 @@ Shader "GeoTetra/MeshAOBaker"
     SubShader
     {
         Tags { "RenderType"="Opaque" }
-        Blend One OneMinusSrcAlpha
+//        Blend One OneMinusSrcAlpha
         Cull Off
 
         Pass
@@ -17,7 +17,7 @@ Shader "GeoTetra/MeshAOBaker"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
-            #pragma target 4.5
+            #pragma target 5.0
             #pragma shader_feature_local CONTRIBUTING_OBJECT
 
             #include "UnityCG.cginc"
@@ -28,17 +28,19 @@ Shader "GeoTetra/MeshAOBaker"
             {
                 float3 vertex : POSITION;
                 float3 normal : NORMAL;
+                float2 uv : TEXCOORD0;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
             struct v2f
             {
                 float4 pos : SV_POSITION;
-                float3 normal : NORMAL;
-                float4 scrPos : SCREEN_POSITION;
+                float4 clipRect : TEXCOORD0;
+                // float3 normal : NORMAL;
+                // float4 scrPos : SCREEN_POSITION;
             };
 
-
+            int _CurrentTestIndex;;            
             int _RenderTextureSizeX;            
             int _RenderTextureSizeY;
             int _CellSize;
@@ -96,10 +98,14 @@ Shader "GeoTetra/MeshAOBaker"
                 return compoundMatrix;
             }            
 
-            v2f vert (appdata v, uint instanceID : SV_InstanceID)
+            v2f vert (
+                appdata v,
+                uint instanceID : SV_InstanceID)
             {
                 v2f o;
                 UNITY_SETUP_INSTANCE_ID(v);
+
+                // instanceID = _CurrentTestIndex;
                 
                 #ifndef CONTRIBUTING_OBJECT
                     float4x4 bakingVertexViewMatrix = VertexTransformMatrix(instanceID);
@@ -118,8 +124,7 @@ Shader "GeoTetra/MeshAOBaker"
                     float4x4 viewProjectionMatrix = MultiplyCameraMatrix(contributingTransformMatrix);
                 #endif
                 
-                o.pos = mul(viewProjectionMatrix, float4(v.vertex, 1));
-                o.scrPos = ComputeNonStereoScreenPos(o.pos);
+                float4 pos = mul(viewProjectionMatrix, float4(v.vertex, 1));
 
                 int2 resolution = int2(_RenderTextureSizeX, _RenderTextureSizeY);
                 int2 cellSize = int2(_CellSize, _CellSize);
@@ -137,20 +142,32 @@ Shader "GeoTetra/MeshAOBaker"
                     0, 0, 1, 0,
                     0, 0, 0, 1
                 };
-                o.pos = mul(translation, o.pos);
 
-                o.normal = v.normal;
-                
+                float2 rectFragStep = 1.0 / gridCount;
+                float2 rectFragHalfStep = rectFragStep / 2.0;
+                float2 rectFragCenterStart = rectFragHalfStep + rectFragStep * gridPos;
+                o.clipRect = float4(rectFragCenterStart.x - rectFragHalfStep.x, rectFragCenterStart.x + rectFragHalfStep.x,
+                                    rectFragCenterStart.y - rectFragHalfStep.y, rectFragCenterStart.y + rectFragHalfStep.y);
+
+                o.pos = mul(translation, pos);
+
                 return o;
             }
 
             float4 frag (v2f i) : SV_Target
-            {                
-                const float2 centerUV  = i.scrPos.xy / i.scrPos.w;
-                if (centerUV.x < _FinalClippings.x || centerUV.x > _FinalClippings.y || centerUV.y < _FinalClippings.z || centerUV.y > _FinalClippings.w)
+            {
+                float2 centerUV = i.pos.xy / float2(_RenderTextureSizeX, _RenderTextureSizeY);
+                centerUV.y = 1 - centerUV.y;
+                if (centerUV.x < i.clipRect.x || centerUV.x > i.clipRect.y ||
+                    centerUV.y < i.clipRect.z || centerUV.y > i.clipRect.w)
                 {
                     discard;
                 }
+
+                // if (centerUV.x < _FinalClippings.x || centerUV.x > _FinalClippings.y || centerUV.y < _FinalClippings.z || centerUV.y > _FinalClippings.w)
+                // {
+                //     discard;
+                // }
                 
                 // return float4(i.pos.w, i.pos.w, i.pos.w, 1.0);
                 return float4(0,0,0,1);

@@ -42,7 +42,7 @@ public class MeshAOBaker : MonoBehaviour
 
     readonly Matrix4x4 m_LookMatrix = Matrix4x4.TRS(new Vector3(0, 0, 0), Quaternion.identity, new Vector3(1, 1, -1));
     readonly Matrix4x4 m_OrthoMatrix = Matrix4x4.Ortho(-1, 1, -1, 1, 0.01f, 2);
-    readonly Matrix4x4 m_PerspMatrix = Matrix4x4.Perspective(90, 1, .000001f, 100);
+    readonly Matrix4x4 m_PerspMatrix = Matrix4x4.Perspective(140, 1, .000001f, 100);
     Matrix4x4 m_TransformTRS;
 
     Matrix4x4[] m_DirectionalMatrices = { 
@@ -79,11 +79,9 @@ public class MeshAOBaker : MonoBehaviour
     
     ComputeBuffer m_BakeArgsBuffer;
     ComputeBuffer m_ContributingArgsBuffer;
-    ComputeBuffer m_BakeMatrixBuffer;
-    ComputeBuffer m_ContributingMatrixBuffer;
-    ComputeBuffer m_VerticesBuffer;
-    ComputeBuffer m_NormalsBuffer;
-    ComputeBuffer m_TangentsBuffer;
+    GraphicsBuffer m_VerticesBuffer;
+    GraphicsBuffer m_NormalsBuffer;
+    GraphicsBuffer m_TangentsBuffer;
     uint[] m_BakeArgs = new uint[5] { 0, 0, 0, 0, 0 };
     uint[] m_ContributingArgs = new uint[5] { 0, 0, 0, 0, 0 };
     
@@ -168,13 +166,11 @@ public class MeshAOBaker : MonoBehaviour
         m_ThreadCount.y = m_ThreadCount.y < 1 ? 1 : m_ThreadCount.y;
         Debug.Log(m_ThreadCount.x + " " + m_ThreadCount.y);
         
-        m_BakeMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
-        m_ContributingMatrixBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 16 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
         m_BakeArgsBuffer = new ComputeBuffer(1, m_BakeArgs.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
         m_ContributingArgsBuffer = new ComputeBuffer(1, m_ContributingArgs.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-        m_VerticesBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
-        m_NormalsBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 3 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
-        m_TangentsBuffer = new ComputeBuffer(m_BakeMesh.vertexCount, 4 * sizeof(float), ComputeBufferType.IndirectArguments, ComputeBufferMode.SubUpdates);
+        m_VerticesBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_VertLength, 3 * sizeof(float));
+        m_NormalsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_VertLength, 3 * sizeof(float));
+        m_TangentsBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_VertLength, 4 * sizeof(float));
         
         SetProperties();
     }
@@ -184,8 +180,6 @@ public class MeshAOBaker : MonoBehaviour
         m_Vertices.Dispose();
         m_Normals.Dispose();
         m_Tangents.Dispose();
-        m_BakeMatrixBuffer.Dispose();
-        m_ContributingMatrixBuffer.Dispose();
         m_BakeArgsBuffer.Dispose();
         m_ContributingArgsBuffer.Dispose();
         m_VerticesBuffer.Dispose();
@@ -216,6 +210,7 @@ public class MeshAOBaker : MonoBehaviour
     }
 
     int m_CurrentDirectionalindex = 0;
+    public int m_CurrentIndex;
     
     void Bake()
     {
@@ -243,6 +238,8 @@ public class MeshAOBaker : MonoBehaviour
         m_AOBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
         m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_CurrentDirectionalindex]);
         m_AOBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_CurrentDirectionalindex]);
+        
+        m_AOBakeMaterial.SetInt("_CurrentTestIndex", m_CurrentIndex);
         // m_AOBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
         // m_AOBakeMaterial.SetVector("_FinalRotation", finalRotVec);
         // m_AOBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
@@ -255,21 +252,23 @@ public class MeshAOBaker : MonoBehaviour
         m_ContributingBakeMaterial.SetMatrix("_BakeCamera_ProjectionMatrix", m_PerspMatrix);
         m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", m_DirectionalMatrices[m_CurrentDirectionalindex]);
         m_ContributingBakeMaterial.SetVector("_FinalClippings", m_DirectionalClippings[m_CurrentDirectionalindex]);       
+        
+        m_ContributingBakeMaterial.SetInt("_CurrentTestIndex", m_CurrentIndex);       
         // m_ContributingBakeMaterial.SetMatrix("_FinalRotationMatrix", Matrix4x4.Rotate(finalRotation));
         // m_ContributingBakeMaterial.SetVector("_FinalRotation", finalRotVec);
         // m_ContributingBakeMaterial.SetVector("_FinalClippings", m_FinalClippingsTest);
 
         m_CommandBuffer.DrawMeshInstancedIndirect(m_BakeMesh, 0, m_AOBakeMaterial, -1, m_BakeArgsBuffer);
-        m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
+        // m_CommandBuffer.DrawMeshInstancedIndirect(m_ContributingMeshes[0].sharedMesh, 0, m_ContributingBakeMaterial, -1, m_ContributingArgsBuffer);
         
         Graphics.ExecuteCommandBuffer(m_CommandBuffer);
 
-        m_CurrentDirectionalindex++;
-        if (m_CurrentDirectionalindex == m_DirectionalMatrices.Length)
-        {
-            m_CurrentDirectionalindex = 0;
+        // m_CurrentDirectionalindex++;
+        // if (m_CurrentDirectionalindex == m_DirectionalMatrices.Length)
+        // {
+        //     m_CurrentDirectionalindex = 0;
             m_DownsizeComputeShader.Dispatch(m_DownSizeKernel, m_ThreadCount.x, m_ThreadCount.y,1);
-        }
+        // }
     }
     
     
@@ -316,8 +315,8 @@ public class MeshAOBaker : MonoBehaviour
         m_MeshRenderer.sharedMaterial.SetFloat("_RenderTextureSizeY", m_Resolution.y);
         m_MeshRenderer.sharedMaterial.SetFloat("_CellSize", m_GridCellRenderSize);
 
-        // int instanceCount = m_BakeMesh.vertexCount;
-        int instanceCount = 1023;
+        int instanceCount = m_BakeMesh.vertexCount;
+        // int instanceCount = 1;
         Debug.Log($"Baking Instance Count: {instanceCount}");
         
         m_BakeArgs[0] = (uint) m_BakeMesh.GetSubMesh(0).indexCount;
