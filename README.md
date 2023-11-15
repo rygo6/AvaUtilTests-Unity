@@ -4,6 +4,7 @@ Abondoned utility project for avatars. Decided to not use unity for this so anyt
 
 Has a few different implementations of AO baking in Burst jobs and Compute Shader. Had one novel solution where it rendered the object being baked from the view of each of its own vertices with a single draw call into a grid through instancing. This was fast enough to do vert baking near realtime on my test meshes. 
 
+![SplineBake](vertbake.png)
 https://www.youtube.com/watch?v=oX_QQzQiZL4
 
 Has a shader implementation of baking the SDF of a spline onto mesh via shader.
