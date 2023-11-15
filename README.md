@@ -1,4 +1,4 @@
-# Doppel-Unity
+# AvaUtilTests-Unity
 
 Abondoned utility project for avatars. Decided to not use unity for this so anything in here is public domain if you find it useful.
 
